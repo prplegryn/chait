@@ -38,14 +38,12 @@ class SettingsScreen extends StatelessWidget {
                     ),
                   ),
                   _SettingsTile(
-                    title: 'API 与模型',
-                    subtitle: store.settings.model.isEmpty
-                        ? '配置自定义接口'
-                        : store.settings.model,
-                    icon: Icons.key_rounded,
+                    title: '服务商设定',
+                    subtitle: '实时获取模型、勾选可用模型',
+                    icon: Icons.cloud_outlined,
                     onTap: () => _open(
                       context,
-                      ApiSettingsPage(store: store),
+                      ProviderSettingsPage(store: store),
                     ),
                   ),
                   _SettingsTile(
@@ -91,6 +89,232 @@ class SettingsScreen extends StatelessWidget {
 
   void _open(BuildContext context, Widget page) {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+  }
+}
+
+class ProviderSettingsPage extends StatelessWidget {
+  const ProviderSettingsPage({super.key, required this.store});
+
+  final AppStore store;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: store,
+      builder: (context, _) {
+        return Scaffold(
+          appBar: AppBar(title: const Text('服务商设定')),
+          body: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+            children: [
+              const _StaticNotice(
+                title: '模型实时获取',
+                body: '这里不内置模型 ID。进入服务商后点击刷新，会从服务商 /models 接口读取当前可调用模型和元数据。',
+              ),
+              ...store.settings.providers.map((provider) {
+                final enabledCount = store.settings.models
+                    .where(
+                      (model) => model.providerId == provider.id && model.enabled,
+                    )
+                    .length;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _SettingsCard(
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 6,
+                      ),
+                      title: Text(provider.name),
+                      subtitle: Text(
+                        enabledCount == 0
+                            ? '未添加模型'
+                            : '已添加 $enabledCount 个模型',
+                      ),
+                      trailing: const Icon(
+                        Icons.chevron_right_rounded,
+                        color: _muted,
+                      ),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => ProviderDetailPage(
+                            store: store,
+                            providerId: provider.id,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class ProviderDetailPage extends StatefulWidget {
+  const ProviderDetailPage({
+    super.key,
+    required this.store,
+    required this.providerId,
+  });
+
+  final AppStore store;
+  final String providerId;
+
+  @override
+  State<ProviderDetailPage> createState() => _ProviderDetailPageState();
+}
+
+class _ProviderDetailPageState extends State<ProviderDetailPage> {
+  late AiProviderConfig provider;
+  late final TextEditingController name;
+  late final TextEditingController baseUrl;
+  late final TextEditingController modelsPath;
+  late final TextEditingController apiKey;
+  late final TextEditingController headers;
+  bool loading = false;
+  String error = '';
+
+  @override
+  void initState() {
+    super.initState();
+    provider = AiProviderConfig.fromJson(
+      widget.store.providerById(widget.providerId).toJson(),
+    );
+    name = TextEditingController(text: provider.name);
+    baseUrl = TextEditingController(text: provider.baseUrl);
+    modelsPath = TextEditingController(text: provider.modelsPath);
+    apiKey = TextEditingController(
+      text: widget.store.apiKeyForProvider(provider.id),
+    );
+    headers = TextEditingController(text: provider.customHeadersJson);
+  }
+
+  @override
+  void dispose() {
+    name.dispose();
+    baseUrl.dispose();
+    modelsPath.dispose();
+    apiKey.dispose();
+    headers.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!_isJsonObject(headers.text)) {
+      _snack(context, '自定义请求头必须是 JSON 对象。');
+      return;
+    }
+    provider
+      ..name = name.text.trim()
+      ..baseUrl = baseUrl.text.trim()
+      ..modelsPath = modelsPath.text.trim().isEmpty ? '/models' : modelsPath.text.trim()
+      ..customHeadersJson = headers.text.trim().isEmpty ? '{}' : headers.text;
+    await widget.store.updateProvider(provider, apiKey: apiKey.text.trim());
+  }
+
+  Future<void> _refresh() async {
+    await _save();
+    setState(() {
+      loading = true;
+      error = '';
+    });
+    try {
+      await widget.store.refreshProviderModels(provider.id);
+    } catch (err) {
+      error = err.toString();
+    } finally {
+      if (mounted) {
+        setState(() => loading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final models = widget.store.settings.models
+        .where((model) => model.providerId == provider.id)
+        .toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+    return AnimatedBuilder(
+      animation: widget.store,
+      builder: (context, _) {
+        return _EditScaffold(
+          title: provider.name,
+          onSave: _save,
+          child: Column(
+            children: [
+              _Field(label: '名称', hint: 'OpenAI', controller: name),
+              _Field(
+                label: 'Base URL',
+                hint: 'https://api.example.com/v1',
+                controller: baseUrl,
+                keyboardType: TextInputType.url,
+              ),
+              _Field(
+                label: '模型列表路径',
+                hint: '/models',
+                controller: modelsPath,
+              ),
+              _Field(
+                label: 'API Key',
+                hint: '服务商密钥',
+                controller: apiKey,
+                obscureText: true,
+              ),
+              _Field(
+                label: '自定义请求头 JSON',
+                hint: '{"HTTP-Referer":"https://example.com"}',
+                controller: headers,
+                minLines: 4,
+                maxLines: 8,
+              ),
+              _ActionButton(
+                label: loading ? '正在刷新…' : '从服务商刷新模型',
+                onPressed: loading ? () {} : _refresh,
+              ),
+              if (error.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                _StaticNotice(title: '刷新失败', body: error),
+              ],
+              const SizedBox(height: 18),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '可用模型',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: _ink,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (models.isEmpty)
+                const _StaticNotice(
+                  title: '暂无模型',
+                  body: '点击刷新后会显示服务商当前返回的模型；勾选后才会进入聊天、标题生成和润色模型选择。',
+                )
+              else
+                ...models.map(
+                  (model) => Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _ModelMetadataTile(
+                      model: model,
+                      value: model.enabled,
+                      onChanged: (value) =>
+                          widget.store.setModelEnabled(model.id, value),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
   }
 }
 
@@ -293,10 +517,11 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
   late final TextEditingController name;
   late final TextEditingController description;
   late final TextEditingController prompt;
-  late final TextEditingController model;
   late final TextEditingController temperature;
   late final TextEditingController topP;
   late final TextEditingController maxTokens;
+  late String preferredModelId;
+  bool polishing = false;
 
   @override
   void initState() {
@@ -305,7 +530,8 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
     name = TextEditingController(text: preset.name);
     description = TextEditingController(text: preset.description);
     prompt = TextEditingController(text: preset.systemPrompt);
-    model = TextEditingController(text: preset.modelOverride);
+    prompt.addListener(_onPromptChanged);
+    preferredModelId = preset.preferredModelId;
     temperature = TextEditingController(text: preset.temperature?.toString());
     topP = TextEditingController(text: preset.topP?.toString());
     maxTokens = TextEditingController(text: preset.maxTokens?.toString());
@@ -313,15 +539,17 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
 
   @override
   void dispose() {
+    prompt.removeListener(_onPromptChanged);
     name.dispose();
     description.dispose();
     prompt.dispose();
-    model.dispose();
     temperature.dispose();
     topP.dispose();
     maxTokens.dispose();
     super.dispose();
   }
+
+  void _onPromptChanged() => setState(() {});
 
   Future<void> _save() async {
     if (name.text.trim().isEmpty) {
@@ -332,7 +560,8 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
       ..name = name.text.trim()
       ..description = description.text.trim()
       ..systemPrompt = prompt.text.trim()
-      ..modelOverride = model.text.trim()
+      ..modelOverride = ''
+      ..preferredModelId = preferredModelId
       ..temperature = _nullableDouble(temperature.text)
       ..topP = _nullableDouble(topP.text)
       ..maxTokens = _nullableInt(maxTokens.text);
@@ -341,6 +570,39 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
       return;
     }
     Navigator.pop(context);
+  }
+
+  Future<void> _polish() async {
+    if (prompt.text.trim().isEmpty || polishing) {
+      return;
+    }
+    setState(() => polishing = true);
+    try {
+      final result = await widget.store.polishAssistantDraft(
+        name: name.text,
+        description: description.text,
+        systemPrompt: prompt.text,
+        temperature: temperature.text,
+        topP: topP.text,
+        maxTokens: maxTokens.text,
+        modelId: preferredModelId,
+      );
+      name.text = result['name'] ?? name.text;
+      description.text = result['description'] ?? description.text;
+      prompt.text = result['systemPrompt'] ?? prompt.text;
+      temperature.text = result['temperature'] ?? temperature.text;
+      topP.text = result['topP'] ?? topP.text;
+      maxTokens.text = result['maxTokens'] ?? maxTokens.text;
+      preferredModelId = result['preferredModelId'] ?? preferredModelId;
+    } catch (error) {
+      if (mounted) {
+        _snack(context, error.toString());
+      }
+    } finally {
+      if (mounted) {
+        setState(() => polishing = false);
+      }
+    }
   }
 
   @override
@@ -352,17 +614,19 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
         children: [
           _Field(label: '名称', hint: '写作助手', controller: name),
           _Field(label: '说明', hint: '结构、标题、润色', controller: description),
-          _Field(
+          _PromptField(
             label: '系统提示词',
             hint: '定义这个助手的角色、语气、边界和输出偏好',
             controller: prompt,
-            minLines: 8,
-            maxLines: 14,
+            polishing: polishing,
+            onPolish: prompt.text.trim().isEmpty ? null : _polish,
           ),
-          _Field(
-            label: '模型覆盖',
-            hint: '留空则使用默认模型',
-            controller: model,
+          _ModelPickerTile(
+            label: '助手偏好模型',
+            value: preferredModelId,
+            models: widget.store.enabledModels,
+            emptyLabel: '继承全局默认模型',
+            onChanged: (value) => setState(() => preferredModelId = value),
           ),
           Row(
             children: [
@@ -407,6 +671,9 @@ class DefaultParamsPage extends StatefulWidget {
 }
 
 class _DefaultParamsPageState extends State<DefaultParamsPage> {
+  late String defaultModelId;
+  late String titleModelId;
+  late String polishModelId;
   late final TextEditingController temperature;
   late final TextEditingController topP;
   late final TextEditingController maxTokens;
@@ -421,6 +688,9 @@ class _DefaultParamsPageState extends State<DefaultParamsPage> {
   void initState() {
     super.initState();
     final settings = widget.store.settings;
+    defaultModelId = settings.defaultModelId;
+    titleModelId = settings.titleModelId;
+    polishModelId = settings.polishModelId;
     temperature = TextEditingController(text: settings.temperature.toString());
     topP = TextEditingController(text: settings.topP.toString());
     maxTokens = TextEditingController(text: settings.maxTokens.toString());
@@ -454,6 +724,9 @@ class _DefaultParamsPageState extends State<DefaultParamsPage> {
       return;
     }
     final next = copySettings(widget.store.settings)
+      ..defaultModelId = defaultModelId
+      ..titleModelId = titleModelId
+      ..polishModelId = polishModelId
       ..temperature = _doubleOr(temperature.text, 0.7)
       ..topP = _doubleOr(topP.text, 1)
       ..maxTokens = _intOr(maxTokens.text, 2048)
@@ -478,6 +751,27 @@ class _DefaultParamsPageState extends State<DefaultParamsPage> {
       onSave: _save,
       child: Column(
         children: [
+          _ModelPickerTile(
+            label: '全局默认会话模型',
+            value: defaultModelId,
+            models: widget.store.enabledModels,
+            allowEmpty: false,
+            onChanged: (value) => setState(() => defaultModelId = value),
+          ),
+          _ModelPickerTile(
+            label: '标题生成模型',
+            value: titleModelId,
+            models: widget.store.enabledModels,
+            emptyLabel: '未设置时使用第一条消息',
+            onChanged: (value) => setState(() => titleModelId = value),
+          ),
+          _ModelPickerTile(
+            label: '润色模型',
+            value: polishModelId,
+            models: widget.store.enabledModels,
+            emptyLabel: '未设置',
+            onChanged: (value) => setState(() => polishModelId = value),
+          ),
           Row(
             children: [
               Expanded(
@@ -724,6 +1018,86 @@ class _SettingsGroup extends StatelessWidget {
   }
 }
 
+class _SettingsCard extends StatelessWidget {
+  const _SettingsCard({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+}
+
+class _ModelMetadataTile extends StatelessWidget {
+  const _ModelMetadataTile({
+    required this.model,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final AiModelConfig model;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return _SettingsCard(
+      child: CheckboxListTile(
+        value: value,
+        fillColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.selected) ? _ink : null,
+        ),
+        checkboxShape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(5),
+        ),
+        contentPadding: const EdgeInsets.fromLTRB(14, 8, 10, 8),
+        title: Text(
+          model.displayName,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(
+            _modelMeta(model),
+            style: const TextStyle(color: _muted, fontSize: 12.5, height: 1.35),
+          ),
+        ),
+        onChanged: (next) => onChanged(next ?? false),
+      ),
+    );
+  }
+}
+
+String _modelMeta(AiModelConfig model) {
+  final parts = <String>[
+    model.name,
+    if (model.contextWindow != null) '上下文 ${model.contextWindow}',
+    if (model.maxOutputTokens != null) '输出 ${model.maxOutputTokens}',
+    if (model.supportsTools == true) '工具',
+    if (model.supportsVision == true) '视觉',
+    if (model.supportsJsonMode == true) 'JSON',
+    if (model.supportsStructuredOutput == true) '结构化',
+    if (model.inputModalities.isNotEmpty) '输入 ${model.inputModalities.join('/')}',
+    if (model.outputModalities.isNotEmpty) '输出 ${model.outputModalities.join('/')}',
+  ];
+  return parts.join(' · ');
+}
+
 class _SettingsTile extends StatelessWidget {
   const _SettingsTile({
     required this.title,
@@ -808,6 +1182,254 @@ class _Field extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _PromptField extends StatelessWidget {
+  const _PromptField({
+    required this.label,
+    required this.hint,
+    required this.controller,
+    required this.polishing,
+    required this.onPolish,
+  });
+
+  final String label;
+  final String hint;
+  final TextEditingController controller;
+  final bool polishing;
+  final VoidCallback? onPolish;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: _muted,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 7),
+          Stack(
+            children: [
+              TextField(
+                controller: controller,
+                minLines: 8,
+                maxLines: 14,
+                cursorColor: _ink,
+                decoration: InputDecoration(
+                  hintText: hint,
+                  hintStyle: const TextStyle(color: _muted, fontSize: 14),
+                  filled: true,
+                  fillColor: _soft,
+                  contentPadding:
+                      const EdgeInsets.fromLTRB(14, 13, 52, 52),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(15),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+                style: const TextStyle(color: _ink, fontSize: 15, height: 1.35),
+              ),
+              Positioned(
+                right: 10,
+                bottom: 10,
+                child: Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    boxShadow: onPolish == null
+                        ? const []
+                        : [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.10),
+                              blurRadius: 14,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
+                  ),
+                  child: IconButton(
+                    tooltip: '润色提示词',
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: _ink,
+                      disabledBackgroundColor: const Color(0xFFEAEAEA),
+                      disabledForegroundColor: _muted,
+                      fixedSize: const Size(38, 38),
+                    ),
+                    onPressed: polishing ? null : onPolish,
+                    icon: polishing
+                        ? const SizedBox(
+                            width: 15,
+                            height: 15,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: _ink,
+                            ),
+                          )
+                        : const Icon(Icons.auto_fix_high_rounded, size: 18),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ModelPickerTile extends StatelessWidget {
+  const _ModelPickerTile({
+    required this.label,
+    required this.value,
+    required this.models,
+    required this.onChanged,
+    this.allowEmpty = true,
+    this.emptyLabel = '不指定',
+  });
+
+  final String label;
+  final String value;
+  final List<AiModelConfig> models;
+  final ValueChanged<String> onChanged;
+  final bool allowEmpty;
+  final String emptyLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = models.where((model) => model.id == value);
+    final title = selected.isEmpty ? emptyLabel : selected.first.displayName;
+    final subtitle = selected.isEmpty
+        ? '先到服务商设定里刷新并勾选模型'
+        : '${selected.first.providerName} · ${_modelMeta(selected.first)}';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: _muted,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 7),
+          Material(
+            color: _soft,
+            borderRadius: BorderRadius.circular(15),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(15),
+              onTap: () => _showModelSheet(context),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: _ink, fontSize: 15),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            subtitle,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: _muted,
+                              fontSize: 12,
+                              height: 1.3,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.expand_more_rounded, color: _muted),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showModelSheet(BuildContext context) async {
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          margin: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.12),
+                blurRadius: 30,
+                offset: const Offset(0, 12),
+              ),
+            ],
+          ),
+          child: SafeArea(
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              children: [
+                if (allowEmpty)
+                  ListTile(
+                    title: Text(emptyLabel),
+                    trailing: value.isEmpty ? const Icon(Icons.check_rounded) : null,
+                    onTap: () => Navigator.pop(context, ''),
+                  ),
+                if (models.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(18),
+                    child: Text(
+                      '还没有已添加模型。请先到服务商设定刷新并勾选模型。',
+                      style: TextStyle(color: _muted),
+                    ),
+                  ),
+                ...models.map(
+                  (model) => ListTile(
+                    title: Text(
+                      model.displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      '${model.providerName} · ${_modelMeta(model)}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing:
+                        value == model.id ? const Icon(Icons.check_rounded) : null,
+                    onTap: () => Navigator.pop(context, model.id),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (result != null) {
+      onChanged(result);
+    }
   }
 }
 

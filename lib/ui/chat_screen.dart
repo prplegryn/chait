@@ -74,6 +74,17 @@ class _ChatScreenState extends State<ChatScreen> {
     await widget.store.sendMessage(text);
   }
 
+  void _openCurrentSessionModel() {
+    showModelChoiceSheet(
+      context: context,
+      title: '当前会话模型',
+      value: widget.store.currentSession.modelId,
+      models: widget.store.enabledModels,
+      emptyLabel: '跟随助手或全局默认',
+      onChanged: widget.store.setSessionModel,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final session = widget.store.currentSession;
@@ -83,55 +94,142 @@ class _ChatScreenState extends State<ChatScreen> {
       backgroundColor: Colors.white,
       drawerScrimColor: Colors.black.withValues(alpha: 0.08),
       drawer: ChaitDrawer(store: widget.store),
-      appBar: AppBar(
-        toolbarHeight: 58,
-        leadingWidth: 56,
-        leading: IconButton(
-          tooltip: '打开侧边栏',
-          icon: const Icon(Icons.menu_rounded, size: 24),
-          onPressed: () => _scaffoldKey.currentState?.openDrawer(),
-        ),
-        title: _ChatTitle(
-          assistantName: assistant.name,
-          sessionTitle: session.title,
-        ),
-        actions: [
-          IconButton(
-            tooltip: '新对话',
-            icon: const Icon(Icons.edit_square, size: 21),
-            onPressed: () => widget.store.createSession(),
-          ),
-          const SizedBox(width: 4),
-        ],
-      ),
-      body: SafeArea(
-        top: false,
-        child: Column(
+      body: Stack(
           children: [
-            const Divider(height: 1),
-            Expanded(
-              child: session.messages.isEmpty
-                  ? _EmptyChat(assistant: assistant)
-                  : ListView.builder(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.fromLTRB(18, 18, 18, 22),
-                      itemCount: session.messages.length,
-                      itemBuilder: (context, index) {
-                        return MessageBubble(
-                          message: session.messages[index],
-                          onRegenerate: widget.store.regenerateLastAnswer,
-                        );
-                      },
-                    ),
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+                child: SafeArea(
+                  top: false,
+                  bottom: false,
+                  child: session.messages.isEmpty
+                      ? Padding(
+                          padding: EdgeInsets.only(
+                            top: MediaQuery.paddingOf(context).top + 76,
+                            bottom: 108,
+                          ),
+                          child: _EmptyChat(assistant: assistant),
+                        )
+                      : ListView.builder(
+                          controller: _scrollController,
+                          keyboardDismissBehavior:
+                              ScrollViewKeyboardDismissBehavior.onDrag,
+                          padding: EdgeInsets.fromLTRB(
+                            18,
+                            MediaQuery.paddingOf(context).top + 98,
+                            18,
+                            118,
+                          ),
+                          itemCount: session.messages.length,
+                          itemBuilder: (context, index) {
+                            return MessageBubble(
+                              message: session.messages[index],
+                              onRegenerate: widget.store.regenerateLastAnswer,
+                            );
+                          },
+                        ),
+                ),
+              ),
             ),
-            Composer(
-              controller: _inputController,
-              focusNode: _focusNode,
-              isSending: widget.store.isSending,
-              onSend: _send,
-              onStop: widget.store.stopGeneration,
+            _ImmersiveTopBar(
+              assistantName: assistant.name,
+              sessionTitle: session.title,
+              showNewChat: session.messages.isNotEmpty,
+              onOpenDrawer: () => _scaffoldKey.currentState?.openDrawer(),
+              onNewChat: () => widget.store.createSession(),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Composer(
+                controller: _inputController,
+                focusNode: _focusNode,
+                isSending: widget.store.isSending,
+                onSend: _send,
+                onStop: widget.store.stopGeneration,
+                onOpenMenu: _openCurrentSessionModel,
+              ),
             ),
           ],
+      ),
+    );
+  }
+}
+
+class _ImmersiveTopBar extends StatelessWidget {
+  const _ImmersiveTopBar({
+    required this.assistantName,
+    required this.sessionTitle,
+    required this.showNewChat,
+    required this.onOpenDrawer,
+    required this.onNewChat,
+  });
+
+  final String assistantName;
+  final String sessionTitle;
+  final bool showNewChat;
+  final VoidCallback onOpenDrawer;
+  final VoidCallback onNewChat;
+
+  @override
+  Widget build(BuildContext context) {
+    final top = MediaQuery.paddingOf(context).top;
+    return Positioned(
+      left: 0,
+      right: 0,
+      top: 0,
+      child: Container(
+        height: top + 92,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.white,
+              Colors.white,
+              Color(0xF2FFFFFF),
+              Color(0x00FFFFFF),
+            ],
+            stops: [0, 0.58, 0.78, 1],
+          ),
+        ),
+        child: Padding(
+          padding: EdgeInsets.only(top: top),
+          child: SizedBox(
+            height: 58,
+            child: Row(
+              children: [
+                const SizedBox(width: 8),
+                IconButton(
+                  tooltip: '打开侧边栏',
+                  icon: const Icon(Icons.menu_rounded, size: 24),
+                  onPressed: onOpenDrawer,
+                ),
+                Expanded(
+                  child: _ChatTitle(
+                    assistantName: assistantName,
+                    sessionTitle: sessionTitle,
+                  ),
+                ),
+                AnimatedOpacity(
+                  opacity: showNewChat ? 1 : 0,
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  child: IgnorePointer(
+                    ignoring: !showNewChat,
+                    child: IconButton(
+                      tooltip: '新对话',
+                      icon: const Icon(Icons.edit_square, size: 21),
+                      onPressed: onNewChat,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -306,11 +404,6 @@ class MessageBubble extends StatelessWidget {
                     icon: Icons.refresh_rounded,
                     onPressed: onRegenerate,
                   ),
-                  if (message.isStreaming)
-                    const Padding(
-                      padding: EdgeInsets.only(left: 8),
-                      child: _TypingDots(),
-                    ),
                 ],
               ),
             ),
@@ -327,35 +420,56 @@ class _MessageContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final content = message.content.isEmpty && message.isStreaming
-        ? '正在输入'
-        : message.content;
+    if (message.content.isEmpty && message.isStreaming) {
+      return const SizedBox(
+        width: 88,
+        height: 22,
+        child: _StreamingHighlight(),
+      );
+    }
+    final content = message.content;
     final display = _formatForMarkdown(content);
-    return MarkdownBody(
-      data: display,
-      softLineBreak: true,
-      styleSheet: MarkdownStyleSheet(
-        p: const TextStyle(
-          color: _ink,
-          fontSize: 15.5,
-          height: 1.45,
-          letterSpacing: 0,
+    return TweenAnimationBuilder<double>(
+      key: ValueKey(display.length),
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      builder: (context, value, child) {
+        return Opacity(
+          opacity: value,
+          child: Transform.translate(
+            offset: Offset(0, (1 - value) * 3),
+            child: child,
+          ),
+        );
+      },
+      child: MarkdownBody(
+        data: display,
+        softLineBreak: true,
+        styleSheet: MarkdownStyleSheet(
+          p: const TextStyle(
+            color: _ink,
+            fontSize: 15.5,
+            height: 1.45,
+            letterSpacing: 0,
+          ),
+          code: const TextStyle(
+            color: _ink,
+            fontSize: 13.5,
+            height: 1.45,
+            fontFamily: 'monospace',
+            backgroundColor: Color(0xFFE8E8E8),
+          ),
+          codeblockDecoration: BoxDecoration(
+            color: const Color(0xFFE8E8E8),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          blockquoteDecoration: const BoxDecoration(
+            border:
+                Border(left: BorderSide(color: Color(0xFFD5D5D5), width: 3)),
+          ),
+          tableBorder: TableBorder.all(color: const Color(0xFFDCDCDC)),
         ),
-        code: const TextStyle(
-          color: _ink,
-          fontSize: 13.5,
-          height: 1.45,
-          fontFamily: 'monospace',
-          backgroundColor: Color(0xFFE8E8E8),
-        ),
-        codeblockDecoration: BoxDecoration(
-          color: const Color(0xFFE8E8E8),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        blockquoteDecoration: const BoxDecoration(
-          border: Border(left: BorderSide(color: Color(0xFFD5D5D5), width: 3)),
-        ),
-        tableBorder: TableBorder.all(color: const Color(0xFFDCDCDC)),
       ),
     );
   }
@@ -404,14 +518,14 @@ class _TinyAction extends StatelessWidget {
   }
 }
 
-class _TypingDots extends StatefulWidget {
-  const _TypingDots();
+class _StreamingHighlight extends StatefulWidget {
+  const _StreamingHighlight();
 
   @override
-  State<_TypingDots> createState() => _TypingDotsState();
+  State<_StreamingHighlight> createState() => _StreamingHighlightState();
 }
 
-class _TypingDotsState extends State<_TypingDots>
+class _StreamingHighlightState extends State<_StreamingHighlight>
     with SingleTickerProviderStateMixin {
   late final AnimationController controller;
 
@@ -420,7 +534,7 @@ class _TypingDotsState extends State<_TypingDots>
     super.initState();
     controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 900),
+      duration: const Duration(milliseconds: 1100),
     )..repeat();
   }
 
@@ -432,23 +546,38 @@ class _TypingDotsState extends State<_TypingDots>
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: controller,
-      builder: (context, _) {
-        final index = (controller.value * 3).floor().clamp(0, 2);
-        return Row(
-          children: List.generate(3, (dot) {
-            return AnimatedContainer(
-              duration: const Duration(milliseconds: 160),
-              margin: const EdgeInsets.symmetric(horizontal: 1.8),
-              width: 4,
-              height: 4,
-              decoration: BoxDecoration(
-                color: dot == index ? _ink : const Color(0xFFCFCFCF),
-                shape: BoxShape.circle,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return AnimatedBuilder(
+          animation: controller,
+          builder: (context, _) {
+            final width = constraints.maxWidth;
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Stack(
+                children: [
+                  Container(color: const Color(0xFFECECEC)),
+                  Positioned(
+                    top: 0,
+                    bottom: 0,
+                    left: (width + 22) * controller.value - 22,
+                    child: Container(
+                      width: 22,
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Color(0x00FFFFFF),
+                            Color(0xFFFFFFFF),
+                            Color(0x00FFFFFF),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             );
-          }),
+          },
         );
       },
     );
@@ -463,6 +592,7 @@ class Composer extends StatefulWidget {
     required this.isSending,
     required this.onSend,
     required this.onStop,
+    required this.onOpenMenu,
   });
 
   final TextEditingController controller;
@@ -470,6 +600,7 @@ class Composer extends StatefulWidget {
   final bool isSending;
   final VoidCallback onSend;
   final VoidCallback onStop;
+  final VoidCallback onOpenMenu;
 
   @override
   State<Composer> createState() => _ComposerState();
@@ -494,8 +625,10 @@ class _ComposerState extends State<Composer> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: Colors.white,
+    return SafeArea(
+      top: false,
+      child: Container(
+      color: Colors.transparent,
       padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 190),
@@ -503,9 +636,15 @@ class _ComposerState extends State<Composer> {
         constraints: const BoxConstraints(minHeight: 48, maxHeight: 154),
         padding: const EdgeInsets.fromLTRB(5, 4, 5, 4),
         decoration: BoxDecoration(
-          color: const Color(0xFFF8F8F8),
+          color: Colors.white,
           borderRadius: BorderRadius.circular(26),
-          border: Border.all(color: _line),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.10),
+              blurRadius: 24,
+              offset: const Offset(0, 8),
+            ),
+          ],
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.end,
@@ -514,11 +653,7 @@ class _ComposerState extends State<Composer> {
               tooltip: '添加',
               visualDensity: VisualDensity.compact,
               icon: const Icon(Icons.add_rounded, color: _muted, size: 24),
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('附件入口已保留')),
-                );
-              },
+              onPressed: widget.onOpenMenu,
             ),
             Expanded(
               child: Padding(
@@ -569,6 +704,7 @@ class _ComposerState extends State<Composer> {
           ],
         ),
       ),
+      ),
     );
   }
 }
@@ -601,7 +737,7 @@ class _ChaitDrawerState extends State<ChaitDrawer> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(18, 10, 14, 8),
+              padding: const EdgeInsets.fromLTRB(18, 10, 18, 8),
               child: Row(
                 children: [
                   const Text(
@@ -613,29 +749,7 @@ class _ChaitDrawerState extends State<ChaitDrawer> {
                       letterSpacing: 0,
                     ),
                   ),
-                  const Spacer(),
-                  IconButton(
-                    tooltip: '新对话',
-                    icon: const Icon(Icons.add_rounded),
-                    onPressed: () {
-                      Navigator.pop(context);
-                      widget.store.createSession();
-                    },
-                  ),
                 ],
-              ),
-            ),
-            _SectionLabel('助手'),
-            ...widget.store.assistants.map(
-              (assistant) => _DrawerRow(
-                title: assistant.name,
-                subtitle: assistant.description,
-                selected: assistant.id == widget.store.currentAssistantId,
-                leading: _AssistantMark(name: assistant.name),
-                onTap: () {
-                  Navigator.pop(context);
-                  widget.store.selectAssistant(assistant.id);
-                },
               ),
             ),
             Padding(
@@ -682,21 +796,33 @@ class _ChaitDrawerState extends State<ChaitDrawer> {
                 ],
               ),
             ),
-            const Divider(height: 1),
-            _DrawerRow(
-              title: '设置',
-              subtitle: '助手、API、参数、数据',
-              leading: const Icon(Icons.settings_outlined, color: _ink),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => SettingsScreen(store: widget.store),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _FloatingPillButton(
+                      label: widget.store.currentAssistant.name,
+                      icon: Icons.person_outline_rounded,
+                      onTap: _showAssistantChooser,
+                    ),
                   ),
-                );
-              },
+                  const SizedBox(width: 10),
+                  _RoundShadowButton(
+                    icon: Icons.settings_outlined,
+                    tooltip: '设置',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => SettingsScreen(store: widget.store),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 8),
           ],
         ),
       ),
@@ -713,42 +839,63 @@ class _ChaitDrawerState extends State<ChaitDrawer> {
   }
 
   Widget _sessionRow(ChatSession session) {
-    final assistant = widget.store.assistants.firstWhere(
-      (item) => item.id == session.assistantId,
-      orElse: () => widget.store.currentAssistant,
-    );
     return _DrawerRow(
       title: session.title,
-      subtitle: assistant.name,
       selected: session.id == widget.store.currentSessionId,
       leading: Icon(
         session.pinned ? Icons.push_pin_rounded : Icons.chat_bubble_outline,
         color: _muted,
         size: 19,
       ),
-      trailing: PopupMenuButton<String>(
-        tooltip: '更多',
-        icon: const Icon(Icons.more_horiz_rounded, color: _muted, size: 20),
-        onSelected: (value) {
-          if (value == 'pin') {
-            widget.store.togglePin(session);
-          } else if (value == 'delete') {
-            widget.store.deleteSession(session.id);
-          }
-        },
-        itemBuilder: (context) => [
-          PopupMenuItem(
-            value: 'pin',
-            child: Text(session.pinned ? '取消置顶' : '置顶'),
-          ),
-          const PopupMenuItem(value: 'delete', child: Text('删除')),
-        ],
-      ),
+      onLongPress: () => _showSessionActions(session),
       onTap: () {
         Navigator.pop(context);
         widget.store.selectSession(session.id);
       },
     );
+  }
+
+  Future<void> _showSessionActions(ChatSession session) async {
+    final action = await _showScaleMenu(
+      context,
+      children: [
+        _MenuAction(
+          icon: session.pinned ? Icons.push_pin_outlined : Icons.push_pin_rounded,
+          label: session.pinned ? '取消置顶' : '置顶',
+          value: 'pin',
+        ),
+        const _MenuAction(
+          icon: Icons.delete_outline_rounded,
+          label: '删除',
+          value: 'delete',
+        ),
+      ],
+    );
+    if (action == 'pin') {
+      widget.store.togglePin(session);
+    } else if (action == 'delete') {
+      widget.store.deleteSession(session.id);
+    }
+  }
+
+  Future<void> _showAssistantChooser() async {
+    final selected = await _showScaleMenu(
+      context,
+      children: widget.store.assistants
+          .map(
+            (assistant) => _MenuAction(
+              icon: Icons.person_outline_rounded,
+              label: assistant.name,
+              subtitle: assistant.description,
+              value: assistant.id,
+            ),
+          )
+          .toList(),
+    );
+    if (selected != null) {
+      Navigator.pop(context);
+      widget.store.selectAssistant(selected);
+    }
   }
 }
 
@@ -783,6 +930,7 @@ class _DrawerRow extends StatelessWidget {
     this.leading,
     this.trailing,
     this.selected = false,
+    this.onLongPress,
     required this.onTap,
   });
 
@@ -791,6 +939,7 @@ class _DrawerRow extends StatelessWidget {
   final Widget? leading;
   final Widget? trailing;
   final bool selected;
+  final VoidCallback? onLongPress;
   final VoidCallback onTap;
 
   @override
@@ -803,6 +952,7 @@ class _DrawerRow extends StatelessWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(14),
           onTap: onTap,
+          onLongPress: onLongPress,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
             child: Row(
@@ -851,31 +1001,152 @@ class _DrawerRow extends StatelessWidget {
   }
 }
 
-class _AssistantMark extends StatelessWidget {
-  const _AssistantMark({required this.name});
+class _FloatingPillButton extends StatelessWidget {
+  const _FloatingPillButton({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+  });
 
-  final String name;
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 25,
-      height: 25,
-      decoration: const BoxDecoration(
-        shape: BoxShape.circle,
-        color: _soft,
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        _initialOf(name),
-        style: const TextStyle(
-          color: _ink,
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(23),
+      elevation: 8,
+      shadowColor: Colors.black.withValues(alpha: 0.12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(23),
+        onTap: onTap,
+        child: SizedBox(
+          height: 46,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: _ink, size: 18),
+              const SizedBox(width: 7),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _ink,
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
+}
+
+class _RoundShadowButton extends StatelessWidget {
+  const _RoundShadowButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      shape: const CircleBorder(),
+      elevation: 8,
+      shadowColor: Colors.black.withValues(alpha: 0.12),
+      child: IconButton(
+        tooltip: tooltip,
+        icon: Icon(icon, color: _ink, size: 20),
+        onPressed: onTap,
+      ),
+    );
+  }
+}
+
+class _MenuAction extends StatelessWidget {
+  const _MenuAction({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.subtitle = '',
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Icon(icon, color: _ink),
+      title: Text(label),
+      subtitle: subtitle.isEmpty ? null : Text(subtitle),
+      onTap: () => Navigator.pop(context, value),
+    );
+  }
+}
+
+Future<String?> _showScaleMenu(
+  BuildContext context, {
+  required List<_MenuAction> children,
+}) {
+  return showGeneralDialog<String>(
+    context: context,
+    barrierDismissible: true,
+    barrierLabel: '关闭',
+    barrierColor: Colors.black.withValues(alpha: 0.08),
+    transitionDuration: const Duration(milliseconds: 170),
+    pageBuilder: (context, _, __) {
+      return Center(
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            width: MediaQuery.sizeOf(context).width * 0.76,
+            constraints: const BoxConstraints(maxWidth: 360),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.14),
+                  blurRadius: 34,
+                  offset: const Offset(0, 14),
+                ),
+              ],
+            ),
+            child: SafeArea(
+              minimum: const EdgeInsets.symmetric(vertical: 8),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: children,
+              ),
+            ),
+          ),
+        ),
+      );
+    },
+    transitionBuilder: (context, animation, _, child) {
+      final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutBack);
+      return FadeTransition(
+        opacity: animation,
+        child: ScaleTransition(scale: curved, child: child),
+      );
+    },
+  );
 }
 
 String _initialOf(String value) {
@@ -884,4 +1155,94 @@ String _initialOf(String value) {
     return '?';
   }
   return trimmed.substring(0, 1);
+}
+
+Future<void> showModelChoiceSheet({
+  required BuildContext context,
+  required String title,
+  required String value,
+  required List<AiModelConfig> models,
+  required String emptyLabel,
+  required ValueChanged<String> onChanged,
+}) async {
+  final result = await showModalBottomSheet<String>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    builder: (context) {
+      return TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0.94, end: 1),
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        builder: (context, scale, child) {
+          return Transform.scale(scale: scale, alignment: Alignment.bottomCenter, child: child);
+        },
+        child: Container(
+          margin: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.12),
+                blurRadius: 30,
+                offset: const Offset(0, 12),
+              ),
+            ],
+          ),
+          child: SafeArea(
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 8, 18, 6),
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      color: _ink,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                ListTile(
+                  title: Text(emptyLabel),
+                  trailing: value.isEmpty ? const Icon(Icons.check_rounded) : null,
+                  onTap: () => Navigator.pop(context, ''),
+                ),
+                if (models.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(18),
+                    child: Text(
+                      '还没有已添加模型。请先到设置的服务商设定里刷新并勾选模型。',
+                      style: TextStyle(color: _muted),
+                    ),
+                  ),
+                ...models.map(
+                  (model) => ListTile(
+                    title: Text(
+                      model.displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      model.providerName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing:
+                        value == model.id ? const Icon(Icons.check_rounded) : null,
+                    onTap: () => Navigator.pop(context, model.id),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
+  if (result != null) {
+    onChanged(result);
+  }
 }

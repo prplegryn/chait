@@ -9,6 +9,7 @@ class AssistantPreset {
     required this.description,
     required this.systemPrompt,
     this.modelOverride = '',
+    this.preferredModelId = '',
     this.temperature,
     this.topP,
     this.maxTokens,
@@ -19,6 +20,7 @@ class AssistantPreset {
   String description;
   String systemPrompt;
   String modelOverride;
+  String preferredModelId;
   double? temperature;
   double? topP;
   int? maxTokens;
@@ -29,6 +31,7 @@ class AssistantPreset {
         'description': description,
         'systemPrompt': systemPrompt,
         'modelOverride': modelOverride,
+        'preferredModelId': preferredModelId,
         'temperature': temperature,
         'topP': topP,
         'maxTokens': maxTokens,
@@ -41,9 +44,148 @@ class AssistantPreset {
       description: json['description'] as String? ?? '',
       systemPrompt: json['systemPrompt'] as String? ?? '',
       modelOverride: json['modelOverride'] as String? ?? '',
+      preferredModelId: json['preferredModelId'] as String? ??
+          json['modelOverride'] as String? ??
+          '',
       temperature: _toDouble(json['temperature']),
       topP: _toDouble(json['topP']),
       maxTokens: _toInt(json['maxTokens']),
+    );
+  }
+}
+
+class AiProviderConfig {
+  AiProviderConfig({
+    required this.id,
+    required this.name,
+    required this.baseUrl,
+    this.isCustom = false,
+    this.customHeadersJson = '{}',
+    this.modelsPath = '/models',
+    this.updatedAt,
+  });
+
+  final String id;
+  String name;
+  String baseUrl;
+  bool isCustom;
+  String customHeadersJson;
+  String modelsPath;
+  DateTime? updatedAt;
+
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'name': name,
+        'baseUrl': baseUrl,
+        'isCustom': isCustom,
+        'customHeadersJson': customHeadersJson,
+        'modelsPath': modelsPath,
+        'updatedAt': updatedAt?.toIso8601String(),
+      };
+
+  factory AiProviderConfig.fromJson(Map<String, Object?> json) {
+    return AiProviderConfig(
+      id: json['id'] as String? ?? newEntityId(),
+      name: json['name'] as String? ?? '自定义服务商',
+      baseUrl: json['baseUrl'] as String? ?? '',
+      isCustom: json['isCustom'] as bool? ?? false,
+      customHeadersJson: json['customHeadersJson'] as String? ?? '{}',
+      modelsPath: json['modelsPath'] as String? ?? '/models',
+      updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? ''),
+    );
+  }
+}
+
+class AiModelConfig {
+  AiModelConfig({
+    required this.id,
+    required this.providerId,
+    required this.providerName,
+    required this.name,
+    String? displayName,
+    this.enabled = false,
+    this.contextWindow,
+    this.maxOutputTokens,
+    this.supportsTools,
+    this.supportsToolChoice,
+    this.supportsVision,
+    this.supportsJsonMode,
+    this.supportsStructuredOutput,
+    this.supportsStreaming,
+    List<String>? inputModalities,
+    List<String>? outputModalities,
+    this.rawJson = '{}',
+    this.refreshedAt,
+  })  : displayName = displayName ?? name,
+        inputModalities = inputModalities ?? [],
+        outputModalities = outputModalities ?? [];
+
+  final String id;
+  String providerId;
+  String providerName;
+  String name;
+  String displayName;
+  bool enabled;
+  int? contextWindow;
+  int? maxOutputTokens;
+  bool? supportsTools;
+  bool? supportsToolChoice;
+  bool? supportsVision;
+  bool? supportsJsonMode;
+  bool? supportsStructuredOutput;
+  bool? supportsStreaming;
+  final List<String> inputModalities;
+  final List<String> outputModalities;
+  String rawJson;
+  DateTime? refreshedAt;
+
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'providerId': providerId,
+        'providerName': providerName,
+        'name': name,
+        'displayName': displayName,
+        'enabled': enabled,
+        'contextWindow': contextWindow,
+        'maxOutputTokens': maxOutputTokens,
+        'supportsTools': supportsTools,
+        'supportsToolChoice': supportsToolChoice,
+        'supportsVision': supportsVision,
+        'supportsJsonMode': supportsJsonMode,
+        'supportsStructuredOutput': supportsStructuredOutput,
+        'supportsStreaming': supportsStreaming,
+        'inputModalities': inputModalities,
+        'outputModalities': outputModalities,
+        'rawJson': rawJson,
+        'refreshedAt': refreshedAt?.toIso8601String(),
+      };
+
+  factory AiModelConfig.fromJson(Map<String, Object?> json) {
+    final name = json['name'] as String? ?? '';
+    return AiModelConfig(
+      id: json['id'] as String? ?? modelConfigId(
+        json['providerId'] as String? ?? 'custom',
+        name,
+      ),
+      providerId: json['providerId'] as String? ?? 'custom',
+      providerName: json['providerName'] as String? ?? '自定义服务商',
+      name: name,
+      displayName: json['displayName'] as String? ?? name,
+      enabled: json['enabled'] as bool? ?? false,
+      contextWindow: _toInt(json['contextWindow']),
+      maxOutputTokens: _toInt(json['maxOutputTokens']),
+      supportsTools: json['supportsTools'] as bool?,
+      supportsToolChoice: json['supportsToolChoice'] as bool?,
+      supportsVision: json['supportsVision'] as bool?,
+      supportsJsonMode: json['supportsJsonMode'] as bool?,
+      supportsStructuredOutput: json['supportsStructuredOutput'] as bool?,
+      supportsStreaming: json['supportsStreaming'] as bool?,
+      inputModalities:
+          (json['inputModalities'] as List?)?.whereType<String>().toList(),
+      outputModalities:
+          (json['outputModalities'] as List?)?.whereType<String>().toList(),
+      rawJson: json['rawJson'] as String? ?? '{}',
+      refreshedAt: DateTime.tryParse(json['refreshedAt'] as String? ?? ''),
     );
   }
 }
@@ -101,6 +243,7 @@ class ChatSession {
     required this.createdAt,
     required this.updatedAt,
     required this.messages,
+    this.modelId = '',
     this.pinned = false,
   });
 
@@ -110,6 +253,7 @@ class ChatSession {
   final DateTime createdAt;
   DateTime updatedAt;
   final List<ChatMessage> messages;
+  String modelId;
   bool pinned;
 
   bool get isEmpty => messages.isEmpty;
@@ -121,6 +265,7 @@ class ChatSession {
         'createdAt': createdAt.toIso8601String(),
         'updatedAt': updatedAt.toIso8601String(),
         'messages': messages.map((message) => message.toJson()).toList(),
+        'modelId': modelId,
         'pinned': pinned,
       };
 
@@ -144,6 +289,7 @@ class ChatSession {
       updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? '') ??
           DateTime.now(),
       messages: messages,
+      modelId: json['modelId'] as String? ?? '',
       pinned: json['pinned'] as bool? ?? false,
     );
   }
@@ -153,6 +299,11 @@ class AppSettings {
   AppSettings({
     this.baseUrl = '',
     this.model = '',
+    List<AiProviderConfig>? providers,
+    List<AiModelConfig>? models,
+    this.defaultModelId = '',
+    this.titleModelId = '',
+    this.polishModelId = '',
     this.stream = true,
     this.temperature = 0.7,
     this.topP = 1,
@@ -165,10 +316,16 @@ class AppSettings {
     this.customHeadersJson = '{}',
     this.extraBodyJson = '{}',
     this.haptics = true,
-  });
+  })  : providers = providers ?? [],
+        models = models ?? [];
 
   String baseUrl;
   String model;
+  final List<AiProviderConfig> providers;
+  final List<AiModelConfig> models;
+  String defaultModelId;
+  String titleModelId;
+  String polishModelId;
   bool stream;
   double temperature;
   double topP;
@@ -185,6 +342,11 @@ class AppSettings {
   Map<String, Object?> toJson() => {
         'baseUrl': baseUrl,
         'model': model,
+        'providers': providers.map((provider) => provider.toJson()).toList(),
+        'models': models.map((model) => model.toJson()).toList(),
+        'defaultModelId': defaultModelId,
+        'titleModelId': titleModelId,
+        'polishModelId': polishModelId,
         'stream': stream,
         'temperature': temperature,
         'topP': topP,
@@ -203,6 +365,11 @@ class AppSettings {
     return AppSettings(
       baseUrl: json['baseUrl'] as String? ?? '',
       model: json['model'] as String? ?? '',
+      providers: _providerList(json['providers']),
+      models: _modelList(json['models']),
+      defaultModelId: json['defaultModelId'] as String? ?? '',
+      titleModelId: json['titleModelId'] as String? ?? '',
+      polishModelId: json['polishModelId'] as String? ?? '',
       stream: json['stream'] as bool? ?? true,
       temperature: _toDouble(json['temperature']) ?? 0.7,
       topP: _toDouble(json['topP']) ?? 1,
@@ -217,6 +384,58 @@ class AppSettings {
       haptics: json['haptics'] as bool? ?? true,
     );
   }
+}
+
+List<AiProviderConfig> defaultProviders() => [
+      AiProviderConfig(
+        id: 'openai',
+        name: 'OpenAI',
+        baseUrl: 'https://api.openai.com/v1',
+      ),
+      AiProviderConfig(
+        id: 'deepseek',
+        name: 'DeepSeek',
+        baseUrl: 'https://api.deepseek.com/v1',
+      ),
+      AiProviderConfig(
+        id: 'qwen',
+        name: '通义千问',
+        baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+      ),
+      AiProviderConfig(
+        id: 'moonshot',
+        name: 'Moonshot',
+        baseUrl: 'https://api.moonshot.cn/v1',
+      ),
+      AiProviderConfig(
+        id: 'zhipu',
+        name: '智谱',
+        baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+      ),
+      AiProviderConfig(
+        id: 'openrouter',
+        name: 'OpenRouter',
+        baseUrl: 'https://openrouter.ai/api/v1',
+      ),
+      AiProviderConfig(
+        id: 'siliconflow',
+        name: '硅基流动',
+        baseUrl: 'https://api.siliconflow.cn/v1',
+      ),
+      AiProviderConfig(
+        id: 'custom',
+        name: '自定义',
+        baseUrl: '',
+        isCustom: true,
+      ),
+    ];
+
+String modelConfigId(String providerId, String modelName) {
+  final normalized = modelName
+      .trim()
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9._/-]+'), '-');
+  return '$providerId::$normalized';
 }
 
 List<AssistantPreset> defaultAssistants() => [
@@ -278,4 +497,24 @@ int? _toInt(Object? value) {
     return int.tryParse(value);
   }
   return null;
+}
+
+List<AiProviderConfig> _providerList(Object? value) {
+  if (value is! List) {
+    return [];
+  }
+  return value
+      .whereType<Map>()
+      .map((item) => AiProviderConfig.fromJson(Map<String, Object?>.from(item)))
+      .toList();
+}
+
+List<AiModelConfig> _modelList(Object? value) {
+  if (value is! List) {
+    return [];
+  }
+  return value
+      .whereType<Map>()
+      .map((item) => AiModelConfig.fromJson(Map<String, Object?>.from(item)))
+      .toList();
 }

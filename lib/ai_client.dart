@@ -10,12 +10,18 @@ class AiRequestConfig {
     required this.apiKey,
     required this.assistant,
     required this.messages,
+    required this.baseUrl,
+    required this.model,
+    this.customHeadersJson = '{}',
   });
 
   final AppSettings settings;
   final String apiKey;
   final AssistantPreset assistant;
   final List<ChatMessage> messages;
+  final String baseUrl;
+  final String model;
+  final String customHeadersJson;
 }
 
 class AiClient {
@@ -32,11 +38,8 @@ class AiClient {
     required void Function(String raw) onRaw,
     required bool Function() isCancelled,
   }) async {
-    final baseUrl = config.settings.baseUrl.trim();
-    final model = (config.assistant.modelOverride.trim().isNotEmpty
-            ? config.assistant.modelOverride
-            : config.settings.model)
-        .trim();
+    final baseUrl = config.baseUrl.trim();
+    final model = config.model.trim();
 
     if (baseUrl.isEmpty || model.isEmpty || config.apiKey.trim().isEmpty) {
       throw const AiException('请先在设置里配置 API 地址、密钥和模型。');
@@ -44,7 +47,7 @@ class AiClient {
 
     final uri = _chatUri(baseUrl);
     final body = _buildBody(config, model);
-    final headers = _decodeJsonObject(config.settings.customHeadersJson);
+    final headers = _decodeJsonObject(config.customHeadersJson);
 
     _client = HttpClient();
     final request = await _client!.postUrl(uri);
@@ -76,6 +79,104 @@ class AiClient {
     }
   }
 
+  Future<List<AiModelConfig>> fetchModels({
+    required AiProviderConfig provider,
+    required String apiKey,
+  }) async {
+    if (provider.baseUrl.trim().isEmpty) {
+      throw const AiException('请先填写服务商 Base URL。');
+    }
+
+    _client = HttpClient();
+    final request = await _client!.getUrl(_modelsUri(provider));
+    request.headers.contentType = ContentType.json;
+    if (apiKey.trim().isNotEmpty) {
+      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $apiKey');
+    }
+    for (final entry in _decodeJsonObject(provider.customHeadersJson).entries) {
+      request.headers.set(entry.key, entry.value.toString());
+    }
+
+    final response = await request.close().timeout(const Duration(seconds: 45));
+    final raw = await response.transform(utf8.decoder).join();
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw AiException('获取模型失败 (${response.statusCode})：${_compactError(raw)}');
+    }
+
+    final decoded = jsonDecode(raw);
+    final list = _extractModelList(decoded);
+    if (list.isEmpty) {
+      throw const AiException('服务商没有返回可识别的模型列表。');
+    }
+
+    final refreshedAt = DateTime.now();
+    final models = <AiModelConfig>[];
+    for (final rawModel in list) {
+      final id = _firstString(rawModel, const ['id', 'name', 'model', 'slug']);
+      var enriched = rawModel;
+      if (id.isNotEmpty && !_hasUsefulMetadata(rawModel)) {
+        final detail = await _tryFetchModelDetail(
+          provider: provider,
+          apiKey: apiKey,
+          modelId: id,
+        );
+        if (detail.isNotEmpty) {
+          enriched = {...rawModel, ...detail};
+        }
+      }
+      final parsed = _parseModel(provider, enriched, refreshedAt);
+      if (parsed.name.trim().isNotEmpty) {
+        models.add(parsed);
+      }
+    }
+    return models..sort((a, b) => a.name.compareTo(b.name));
+  }
+
+  Future<String> generateText({
+    required AppSettings settings,
+    required String apiKey,
+    required AssistantPreset assistant,
+    required String baseUrl,
+    required String model,
+    required String customHeadersJson,
+    required String systemPrompt,
+    required String userPrompt,
+    double temperature = 0.2,
+    int maxTokens = 512,
+  }) async {
+    final tempSettings = AppSettings.fromJson(settings.toJson())
+      ..stream = false
+      ..temperature = temperature
+      ..maxTokens = maxTokens;
+    final taskAssistant = AssistantPreset.fromJson(assistant.toJson())
+      ..systemPrompt = systemPrompt
+      ..temperature = temperature
+      ..maxTokens = maxTokens;
+    var text = '';
+    await sendChat(
+      config: AiRequestConfig(
+        settings: tempSettings,
+        apiKey: apiKey,
+        assistant: taskAssistant,
+        messages: [
+          ChatMessage(
+            id: newEntityId(),
+            role: 'user',
+            content: userPrompt,
+            createdAt: DateTime.now(),
+          ),
+        ],
+        baseUrl: baseUrl,
+        model: model,
+        customHeadersJson: customHeadersJson,
+      ),
+      onDelta: (delta) => text += delta,
+      onRaw: (_) {},
+      isCancelled: () => false,
+    );
+    return text.trim();
+  }
+
   Uri _chatUri(String baseUrl) {
     final normalized = baseUrl.endsWith('/')
         ? baseUrl.substring(0, baseUrl.length - 1)
@@ -84,6 +185,62 @@ class AiClient {
       return Uri.parse(normalized);
     }
     return Uri.parse('$normalized/chat/completions');
+  }
+
+  Uri _modelsUri(AiProviderConfig provider) {
+    final baseUrl = provider.baseUrl.trim();
+    final normalized = baseUrl.endsWith('/')
+        ? baseUrl.substring(0, baseUrl.length - 1)
+        : baseUrl;
+    final path = provider.modelsPath.trim().isEmpty
+        ? '/models'
+        : provider.modelsPath.trim();
+    if (normalized.endsWith(path)) {
+      return Uri.parse(normalized);
+    }
+    if (normalized.endsWith('/chat/completions')) {
+      return Uri.parse(
+        '${normalized.substring(0, normalized.length - '/chat/completions'.length)}$path',
+      );
+    }
+    return Uri.parse('$normalized$path');
+  }
+
+  Uri _modelDetailUri(AiProviderConfig provider, String modelId) {
+    final modelsUri = _modelsUri(provider).toString();
+    final encoded = Uri.encodeComponent(modelId);
+    return Uri.parse('${modelsUri.endsWith('/') ? modelsUri : '$modelsUri/'}$encoded');
+  }
+
+  Future<Map<String, Object?>> _tryFetchModelDetail({
+    required AiProviderConfig provider,
+    required String apiKey,
+    required String modelId,
+  }) async {
+    try {
+      final request = await _client!.getUrl(_modelDetailUri(provider, modelId));
+      request.headers.contentType = ContentType.json;
+      if (apiKey.trim().isNotEmpty) {
+        request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $apiKey');
+      }
+      for (final entry in _decodeJsonObject(provider.customHeadersJson).entries) {
+        request.headers.set(entry.key, entry.value.toString());
+      }
+      final response =
+          await request.close().timeout(const Duration(seconds: 20));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        await response.drain();
+        return {};
+      }
+      final raw = await response.transform(utf8.decoder).join();
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        return Map<String, Object?>.from(decoded);
+      }
+    } catch (_) {
+      return {};
+    }
+    return {};
   }
 
   Map<String, Object?> _buildBody(AiRequestConfig config, String model) {
@@ -134,6 +291,151 @@ class AiClient {
 
     body.addAll(_decodeJsonObject(settings.extraBodyJson));
     return body;
+  }
+
+  List<Map<String, Object?>> _extractModelList(Object? decoded) {
+    if (decoded is List) {
+      return decoded
+          .map((item) {
+            if (item is Map) {
+              return Map<String, Object?>.from(item);
+            }
+            return <String, Object?>{'id': item?.toString() ?? ''};
+          })
+          .toList();
+    }
+    if (decoded is Map) {
+      for (final key in ['data', 'models', 'items']) {
+        final value = decoded[key];
+        if (value is List) {
+          return value.map((item) {
+            if (item is Map) {
+              return Map<String, Object?>.from(item);
+            }
+            return <String, Object?>{'id': item?.toString() ?? ''};
+          }).toList();
+        }
+      }
+    }
+    return [];
+  }
+
+  AiModelConfig _parseModel(
+    AiProviderConfig provider,
+    Map<String, Object?> raw,
+    DateTime refreshedAt,
+  ) {
+    final id = _firstString(raw, const ['id', 'name', 'model', 'slug']);
+    final displayName =
+        _firstString(raw, const ['display_name', 'displayName', 'label']);
+    final supportedParameters = _stringList(raw['supported_parameters']);
+    final capabilities = _mapValue(raw['capabilities']);
+    final architecture = _mapValue(raw['architecture']);
+    final topProvider = _mapValue(raw['top_provider']);
+
+    final inputModalities = <String>{
+      ..._stringList(raw['input_modalities']),
+      ..._stringList(raw['inputModalities']),
+      ..._stringList(architecture['input_modalities']),
+      ..._stringList(architecture['inputModalities']),
+      ..._stringList(raw['modalities']),
+    }.toList()
+      ..sort();
+    final outputModalities = <String>{
+      ..._stringList(raw['output_modalities']),
+      ..._stringList(raw['outputModalities']),
+      ..._stringList(architecture['output_modalities']),
+      ..._stringList(architecture['outputModalities']),
+    }.toList()
+      ..sort();
+
+    return AiModelConfig(
+      id: modelConfigId(provider.id, id),
+      providerId: provider.id,
+      providerName: provider.name,
+      name: id,
+      displayName: displayName.isEmpty ? id : displayName,
+      contextWindow: _firstInt(
+        raw,
+        const [
+          'context_length',
+          'contextLength',
+          'context_window',
+          'contextWindow',
+          'max_context_length',
+          'max_input_tokens',
+        ],
+      ) ??
+          _toInt(topProvider['context_length']),
+      maxOutputTokens: _firstInt(
+        raw,
+        const [
+          'max_output_tokens',
+          'maxOutputTokens',
+          'max_completion_tokens',
+          'max_tokens',
+        ],
+      ),
+      supportsTools: _boolCapability(
+        raw,
+        capabilities,
+        supportedParameters,
+        const ['tools', 'tool_calls', 'function_calling', 'function_call'],
+      ),
+      supportsToolChoice: _boolCapability(
+        raw,
+        capabilities,
+        supportedParameters,
+        const ['tool_choice'],
+      ),
+      supportsVision: _boolCapability(
+            raw,
+            capabilities,
+            supportedParameters,
+            const ['vision', 'image', 'images', 'image_url'],
+          ) ??
+          inputModalities.any((item) => item.contains('image')),
+      supportsJsonMode: _boolCapability(
+        raw,
+        capabilities,
+        supportedParameters,
+        const ['json', 'json_mode', 'response_format'],
+      ),
+      supportsStructuredOutput: _boolCapability(
+        raw,
+        capabilities,
+        supportedParameters,
+        const ['structured_outputs', 'json_schema'],
+      ),
+      supportsStreaming: _boolCapability(
+            raw,
+            capabilities,
+            supportedParameters,
+            const ['stream', 'streaming'],
+          ) ??
+          true,
+      inputModalities: inputModalities,
+      outputModalities: outputModalities,
+      rawJson: jsonEncode(raw),
+      refreshedAt: refreshedAt,
+    );
+  }
+
+  bool _hasUsefulMetadata(Map<String, Object?> raw) {
+    const keys = [
+      'context_length',
+      'contextLength',
+      'context_window',
+      'max_output_tokens',
+      'supported_parameters',
+      'capabilities',
+      'architecture',
+      'top_provider',
+      'input_modalities',
+      'output_modalities',
+      'modalities',
+    ];
+    return keys.any(raw.containsKey);
   }
 
   Future<void> _readStream(
@@ -262,6 +564,89 @@ class AiClient {
       return jsonEncode(content);
     }
     return content.toString();
+  }
+
+  String _firstString(Map<String, Object?> map, List<String> keys) {
+    for (final key in keys) {
+      final value = map[key];
+      if (value is String && value.trim().isNotEmpty) {
+        return value.trim();
+      }
+      if (value is num || value is bool) {
+        return value.toString();
+      }
+    }
+    return '';
+  }
+
+  int? _firstInt(Map<String, Object?> map, List<String> keys) {
+    for (final key in keys) {
+      final value = _toInt(map[key]);
+      if (value != null) {
+        return value;
+      }
+    }
+    return null;
+  }
+
+  Map<String, Object?> _mapValue(Object? value) {
+    if (value is Map) {
+      return Map<String, Object?>.from(value);
+    }
+    return {};
+  }
+
+  List<String> _stringList(Object? value) {
+    if (value is List) {
+      return value
+          .map((item) => item.toString().trim().toLowerCase())
+          .where((item) => item.isNotEmpty)
+          .toList();
+    }
+    if (value is String && value.trim().isNotEmpty) {
+      return [value.trim().toLowerCase()];
+    }
+    return [];
+  }
+
+  bool? _boolCapability(
+    Map<String, Object?> raw,
+    Map<String, Object?> capabilities,
+    List<String> supportedParameters,
+    List<String> names,
+  ) {
+    for (final name in names) {
+      final direct = raw[name] ?? capabilities[name];
+      if (direct is bool) {
+        return direct;
+      }
+      if (direct is String) {
+        final normalized = direct.toLowerCase();
+        if (normalized == 'true' || normalized == 'supported') {
+          return true;
+        }
+        if (normalized == 'false' || normalized == 'unsupported') {
+          return false;
+        }
+      }
+    }
+    if (supportedParameters.any((item) => names.contains(item))) {
+      return true;
+    }
+    return null;
+  }
+
+  int? _toInt(Object? value) {
+    if (value is int) {
+      return value;
+    }
+    if (value is double) {
+      return value.round();
+    }
+    if (value is String) {
+      return int.tryParse(value);
+    }
+    return null;
   }
 
   Map<String, Object?> _decodeJsonObject(String source) {
