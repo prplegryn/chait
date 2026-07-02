@@ -1,0 +1,71 @@
+name: Android APK
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build signed release APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Create Android platform
+        run: flutter create --platforms=android --project-name chait --org com.prplegryn .
+
+      - name: Configure Android signing
+        run: |
+          mkdir -p android/app/src/main
+          cp ci/android/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
+          if [ -f android/app/build.gradle.kts ]; then
+            cp ci/android/app-build.gradle.kts android/app/build.gradle.kts
+          else
+            cp ci/android/app-build.gradle android/app/build.gradle
+          fi
+          base64 -d ci/signing/chait-release.jks.base64 > android/app/chait-release.jks
+          cat > android/key.properties <<'EOF'
+          storePassword=chait-release-2026
+          keyPassword=chait-release-2026
+          keyAlias=chait
+          storeFile=chait-release.jks
+          EOF
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Static analysis
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      - name: Build APK
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: chait-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
