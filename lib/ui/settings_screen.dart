@@ -174,7 +174,7 @@ class _ApiSettingsPageState extends State<ApiSettingsPage> {
           ),
           SwitchListTile(
             value: stream,
-            activeColor: _ink,
+            activeThumbColor: _ink,
             contentPadding: EdgeInsets.zero,
             title: const Text('流式输出'),
             subtitle: const Text('支持 SSE 的接口会逐字返回'),
@@ -592,7 +592,7 @@ class _AppearancePageState extends State<AppearancePage> {
           ),
           SwitchListTile(
             value: haptics,
-            activeColor: _ink,
+            activeThumbColor: _ink,
             contentPadding: EdgeInsets.zero,
             title: const Text('触感反馈'),
             subtitle: const Text('发送、切换助手等操作使用轻触反馈'),
@@ -655,7 +655,7 @@ class _DataPageState extends State<DataPage> {
         children: [
           SwitchListTile(
             value: includeApiKey,
-            activeColor: _ink,
+            activeThumbColor: _ink,
             contentPadding: EdgeInsets.zero,
             title: const Text('导出时包含 API Key'),
             subtitle: const Text('默认不导出密钥'),
