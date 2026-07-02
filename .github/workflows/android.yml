@@ -38,11 +38,8 @@ jobs:
         run: |
           mkdir -p android/app/src/main
           cp ci/android/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
-          if [ -f android/app/build.gradle.kts ]; then
-            cp ci/android/app-build.gradle.kts android/app/build.gradle.kts
-          else
-            cp ci/android/app-build.gradle android/app/build.gradle
-          fi
+          rm -f android/app/build.gradle.kts
+          cp ci/android/app-build.gradle android/app/build.gradle
           base64 -d ci/signing/chait-release.jks.base64 > android/app/chait-release.jks
           cat > android/key.properties <<'EOF'
           storePassword=chait-release-2026
