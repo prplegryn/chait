@@ -10,7 +10,6 @@ import 'settings_screen.dart';
 
 const _ink = Color(0xFF111111);
 const _muted = Color(0xFF8B8B8B);
-const _line = Color(0xFFEDEDED);
 const _soft = Color(0xFFF7F7F7);
 const _bubble = Color(0xFFF1F1F1);
 const _userBubble = Color(0xFFE9E9E9);
@@ -926,18 +925,14 @@ class _SectionLabel extends StatelessWidget {
 class _DrawerRow extends StatelessWidget {
   const _DrawerRow({
     required this.title,
-    this.subtitle = '',
     this.leading,
-    this.trailing,
     this.selected = false,
     this.onLongPress,
     required this.onTap,
   });
 
   final String title;
-  final String subtitle;
   final Widget? leading;
-  final Widget? trailing;
   final bool selected;
   final VoidCallback? onLongPress;
   final VoidCallback onTap;
@@ -975,23 +970,9 @@ class _DrawerRow extends StatelessWidget {
                           fontWeight: FontWeight.w500,
                         ),
                       ),
-                      if (subtitle.isNotEmpty) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          subtitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: _muted,
-                            fontSize: 12,
-                            height: 1.2,
-                          ),
-                        ),
-                      ],
                     ],
                   ),
                 ),
-                if (trailing != null) trailing!,
               ],
             ),
           ),
