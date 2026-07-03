@@ -41,6 +41,12 @@ class SearchClient {
       if (kind == 'brave') {
         return await _searchBrave(provider, apiKey, normalizedQuery);
       }
+      if (kind == 'serper') {
+        return await _searchSerper(provider, apiKey, normalizedQuery);
+      }
+      if (kind == 'searxng') {
+        return await _searchSearXng(provider, normalizedQuery);
+      }
       if (kind == 'exa') {
         return await _searchExa(provider, apiKey, normalizedQuery);
       }
@@ -118,6 +124,55 @@ class SearchClient {
     request.write(jsonEncode(body));
     final decoded = await _readJson(request);
     return _parseResults(decoded is Map ? decoded['results'] : null);
+  }
+
+  Future<List<SearchResult>> _searchSerper(
+    SearchProviderConfig provider,
+    String apiKey,
+    String query,
+  ) async {
+    final body = <String, Object?>{
+      'q': query,
+      'num': provider.maxResults,
+      ..._decodeJsonObject(provider.extraBodyJson),
+    };
+    final request = await _client!.postUrl(_join(provider.baseUrl, '/search'));
+    request.headers.contentType = ContentType.json;
+    if (apiKey.trim().isNotEmpty) {
+      request.headers.set('X-API-KEY', apiKey.trim());
+    }
+    _applyHeaders(request, provider.customHeadersJson);
+    request.write(jsonEncode(body));
+    final decoded = await _readJson(request);
+    if (decoded is Map) {
+      return _parseResults(
+        decoded['organic'] ?? decoded['results'] ?? decoded['items'],
+      );
+    }
+    return _parseResults(decoded);
+  }
+
+  Future<List<SearchResult>> _searchSearXng(
+    SearchProviderConfig provider,
+    String query,
+  ) async {
+    final uri = _appendQuery(
+      _join(provider.baseUrl, '/search'),
+      {
+        'q': query,
+        'format': 'json',
+        'language': 'auto',
+        'safesearch': '0',
+      },
+    );
+    final request = await _client!.getUrl(uri);
+    request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+    _applyHeaders(request, provider.customHeadersJson);
+    final decoded = await _readJson(request);
+    if (decoded is Map) {
+      return _parseResults(decoded['results'] ?? decoded['items']);
+    }
+    return _parseResults(decoded);
   }
 
   Future<List<SearchResult>> _searchLinkUp(
@@ -209,11 +264,20 @@ class SearchClient {
         continue;
       }
       final map = Map<String, Object?>.from(item);
-      final title = _firstString(map, const ['title', 'name']);
-      final url = _firstString(map, const ['url', 'link', 'href']);
+      final title = _firstString(map, const ['title', 'name', 'heading']);
+      final url = _firstString(map, const ['url', 'link', 'href', 'source']);
       final snippet = _firstString(
         map,
-        const ['content', 'text', 'snippet', 'description', 'summary'],
+        const [
+          'content',
+          'text',
+          'snippet',
+          'description',
+          'summary',
+          'body',
+          'markdown',
+          'answer',
+        ],
       );
       if (title.isNotEmpty || url.isNotEmpty || snippet.isNotEmpty) {
         results.add(
@@ -232,6 +296,9 @@ class SearchClient {
     final normalized = baseUrl.endsWith('/')
         ? baseUrl.substring(0, baseUrl.length - 1)
         : baseUrl;
+    if (normalized.endsWith(path)) {
+      return Uri.parse(normalized);
+    }
     return Uri.parse('$normalized$path');
   }
 

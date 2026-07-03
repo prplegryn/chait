@@ -266,6 +266,7 @@ class ChatSession {
     required this.messages,
     this.modelId = '',
     this.searchEnabled = false,
+    this.searchMode = 'follow',
     this.pinned = false,
   });
 
@@ -277,6 +278,7 @@ class ChatSession {
   final List<ChatMessage> messages;
   String modelId;
   bool searchEnabled;
+  String searchMode;
   bool pinned;
 
   bool get isEmpty => messages.isEmpty;
@@ -290,6 +292,7 @@ class ChatSession {
         'messages': messages.map((message) => message.toJson()).toList(),
         'modelId': modelId,
         'searchEnabled': searchEnabled,
+        'searchMode': searchMode,
         'pinned': pinned,
       };
 
@@ -315,9 +318,18 @@ class ChatSession {
       messages: messages,
       modelId: json['modelId'] as String? ?? '',
       searchEnabled: json['searchEnabled'] as bool? ?? false,
+      searchMode: _searchModeFromJson(json),
       pinned: json['pinned'] as bool? ?? false,
     );
   }
+}
+
+String _searchModeFromJson(Map<String, Object?> json) {
+  final value = json['searchMode'] as String?;
+  if (value == 'on' || value == 'off' || value == 'follow') {
+    return value!;
+  }
+  return (json['searchEnabled'] as bool? ?? false) ? 'on' : 'follow';
 }
 
 class SearchProviderConfig {
@@ -652,6 +664,20 @@ List<SearchProviderConfig> defaultSearchProviders() => [
         enabled: false,
       ),
       SearchProviderConfig(
+        id: 'serper',
+        name: 'Serper',
+        kind: 'serper',
+        baseUrl: 'https://google.serper.dev',
+        enabled: false,
+      ),
+      SearchProviderConfig(
+        id: 'searxng',
+        name: 'SearXNG',
+        kind: 'searxng',
+        baseUrl: '',
+        enabled: false,
+      ),
+      SearchProviderConfig(
         id: 'linkup',
         name: 'LinkUp',
         kind: 'linkup',
@@ -666,6 +692,16 @@ List<SearchProviderConfig> defaultSearchProviders() => [
         enabled: false,
       ),
     ];
+
+bool searchProviderNeedsApiKey(String kind) {
+  switch (kind.trim().toLowerCase()) {
+    case 'custom':
+    case 'searxng':
+      return false;
+    default:
+      return true;
+  }
+}
 
 List<McpServerConfig> defaultMcpServers() => [];
 

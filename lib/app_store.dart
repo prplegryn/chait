@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_background/flutter_background.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -38,6 +40,8 @@ class AppStore extends ChangeNotifier {
 
   AiClient? _activeClient;
   bool _cancelRequested = false;
+  bool _backgroundInitialized = false;
+  bool _backgroundHeld = false;
 
   AssistantPreset get currentAssistant {
     return assistants.firstWhere(
@@ -278,9 +282,19 @@ class AppStore extends ChangeNotifier {
   }
 
   Future<void> setSessionSearchEnabled(bool enabled) async {
-    currentSession.searchEnabled = enabled;
+    currentSession
+      ..searchEnabled = enabled
+      ..searchMode = enabled ? 'on' : 'off';
     notifyListeners();
     await save();
+  }
+
+  bool isSearchEnabledForSession(ChatSession session) {
+    return switch (session.searchMode) {
+      'on' => true,
+      'off' => false,
+      _ => settings.searchEnabledByDefault,
+    };
   }
 
   List<AiModelConfig> get enabledModels =>
@@ -354,7 +368,7 @@ class AppStore extends ChangeNotifier {
     if (provider.baseUrl.trim().isEmpty) {
       throw const SearchException('请先填写搜索服务地址。');
     }
-    if (provider.kind.trim().toLowerCase() != 'custom' &&
+    if (searchProviderNeedsApiKey(provider.kind) &&
         apiKeyForSearchProvider(provider.id).trim().isEmpty) {
       throw const SearchException('请先填写搜索服务密钥。');
     }
@@ -557,7 +571,7 @@ class AppStore extends ChangeNotifier {
       content: '',
       createdAt: DateTime.now(),
       isStreaming: true,
-      status: _hasUsableSearch(session) ? '搜索中' : '...',
+      status: '思考中',
     );
     session.messages.add(assistantMessage);
     isSending = true;
@@ -565,23 +579,42 @@ class AppStore extends ChangeNotifier {
     _sortSessions();
     notifyListeners();
 
+    await _enableBackgroundDuringGeneration();
     _activeClient = AiClient();
     try {
       final target = _resolveModelTarget(session);
       final assistant = assistantForSession(session);
-      if (_hasUsableSearch(session)) {
+      final shouldSearch = _shouldSearch(session, trimmed);
+      if (shouldSearch) {
         assistantMessage.status = '搜索中';
         notifyListeners();
       }
-      final searchContext = await _searchContextFor(session, trimmed);
-      assistantMessage.status = _statusForModel(target.model);
+      final searchOutcome = await _searchContextFor(
+        session,
+        trimmed,
+        shouldSearch: shouldSearch,
+      );
+      assistantMessage.status = '思考中';
       notifyListeners();
       final outboundMessages = [
-        if (searchContext.isNotEmpty)
+        ChatMessage(
+          id: newEntityId(),
+          role: 'system',
+          content: _runtimeSystemContext(),
+          createdAt: DateTime.now(),
+        ),
+        if (searchOutcome.context.isNotEmpty)
           ChatMessage(
             id: newEntityId(),
             role: 'system',
-            content: searchContext,
+            content: searchOutcome.context,
+            createdAt: DateTime.now(),
+          ),
+        if (searchOutcome.error.isNotEmpty)
+          ChatMessage(
+            id: newEntityId(),
+            role: 'system',
+            content: searchOutcome.error,
             createdAt: DateTime.now(),
           ),
         ...session.messages
@@ -626,6 +659,7 @@ class AppStore extends ChangeNotifier {
       session.updatedAt = DateTime.now();
       _sortSessions();
       notifyListeners();
+      await _disableBackgroundAfterGeneration();
       await save();
       if (isNewSession && settings.titleModelId.isNotEmpty) {
         await generateTitleForSession(session.id, fallbackPrompt: trimmed);
@@ -871,6 +905,7 @@ class AppStore extends ChangeNotifier {
       updatedAt: DateTime.now(),
       messages: [],
       searchEnabled: settings.searchEnabledByDefault,
+      searchMode: 'follow',
     );
   }
 
@@ -885,6 +920,11 @@ class AppStore extends ChangeNotifier {
     for (final session in sessions) {
       if (!assistants.any((assistant) => assistant.id == session.assistantId)) {
         session.assistantId = assistants.first.id;
+      }
+      if (session.searchMode != 'on' &&
+          session.searchMode != 'off' &&
+          session.searchMode != 'follow') {
+        session.searchMode = session.searchEnabled ? 'on' : 'follow';
       }
       for (final message in session.messages) {
         message.isStreaming = false;
@@ -930,7 +970,7 @@ class AppStore extends ChangeNotifier {
             return false;
           }
           final kind = provider.kind.trim().toLowerCase();
-          if (kind == 'custom') {
+          if (!searchProviderNeedsApiKey(kind)) {
             return true;
           }
           return apiKeyForSearchProvider(provider.id).trim().isNotEmpty;
@@ -939,7 +979,7 @@ class AppStore extends ChangeNotifier {
         .toSet();
     for (final provider in settings.searchProviders) {
       final kind = provider.kind.trim().toLowerCase();
-      if (kind != 'custom' &&
+      if (searchProviderNeedsApiKey(kind) &&
           apiKeyForSearchProvider(provider.id).trim().isEmpty) {
         provider.enabled = false;
       }
@@ -1015,9 +1055,13 @@ class AppStore extends ChangeNotifier {
     }
   }
 
-  Future<String> _searchContextFor(ChatSession session, String prompt) async {
-    if (!_hasUsableSearch(session)) {
-      return '';
+  Future<_SearchOutcome> _searchContextFor(
+    ChatSession session,
+    String prompt, {
+    required bool shouldSearch,
+  }) async {
+    if (!shouldSearch) {
+      return const _SearchOutcome();
     }
     try {
       final provider = searchProviderById(settings.defaultSearchProviderId);
@@ -1027,14 +1071,18 @@ class AppStore extends ChangeNotifier {
         apiKey: apiKeyForSearchProvider(provider.id),
         query: prompt,
       );
-      return client.formatResults(results);
-    } catch (_) {
-      return '';
+      return _SearchOutcome(context: client.formatResults(results));
+    } catch (error) {
+      return _SearchOutcome(
+        error:
+            '本轮尝试联网搜索但失败：${friendlyError(error)}。请不要编造实时资料；如果问题需要最新信息，请说明当前无法确认。',
+      );
     }
   }
 
   bool _hasUsableSearch(ChatSession session) {
-    if (!session.searchEnabled || settings.defaultSearchProviderId.isEmpty) {
+    if (!isSearchEnabledForSession(session) ||
+        settings.defaultSearchProviderId.isEmpty) {
       return false;
     }
     try {
@@ -1043,23 +1091,146 @@ class AppStore extends ChangeNotifier {
         return false;
       }
       final kind = provider.kind.trim().toLowerCase();
-      return kind == 'custom' ||
+      return !searchProviderNeedsApiKey(kind) ||
           apiKeyForSearchProvider(provider.id).trim().isNotEmpty;
     } catch (_) {
       return false;
     }
   }
 
-  String _statusForModel(AiModelConfig model) {
-    final name = model.name.toLowerCase();
-    if (name.contains('reason') ||
-        name.contains('thinking') ||
-        name.contains('r1') ||
-        name.contains('o1') ||
-        name.contains('o3')) {
-      return '思考中';
+  bool _shouldSearch(ChatSession session, String prompt) {
+    return _hasUsableSearch(session) && _promptNeedsSearch(prompt);
+  }
+
+  bool _promptNeedsSearch(String prompt) {
+    final text = prompt.trim();
+    if (text.isEmpty) {
+      return false;
     }
-    return '...';
+    final lower = text.toLowerCase();
+    if (RegExp(r'https?://|www\.|[\w-]+\.(com|cn|net|org|io|ai|dev|app)\b')
+        .hasMatch(lower)) {
+      return true;
+    }
+    const directTriggers = [
+      '搜索',
+      '联网',
+      '查一下',
+      '查下',
+      '搜一下',
+      '网上',
+      '官网',
+      '来源',
+      '新闻',
+      '最新',
+      '近期',
+      '最近',
+      '现任',
+      '当前版本',
+      '今天的',
+      '实时',
+      '股价',
+      '汇率',
+      '价格',
+      '余额',
+      '天气',
+      '赛程',
+      '比赛',
+      '航班',
+      '票价',
+      '政策',
+      '法规',
+      '发布',
+      '更新',
+    ];
+    if (directTriggers.any(text.contains)) {
+      return true;
+    }
+    const englishTriggers = [
+      'latest',
+      'recent',
+      'today',
+      'current',
+      'news',
+      'weather',
+      'price',
+      'stock',
+      'schedule',
+      'release',
+      'version',
+      'who is the current',
+    ];
+    return englishTriggers.any(lower.contains);
+  }
+
+  String _runtimeSystemContext() {
+    final now = DateTime.now();
+    final offset = now.timeZoneOffset;
+    final sign = offset.isNegative ? '-' : '+';
+    final absOffset = offset.abs();
+    final hours = absOffset.inHours.toString().padLeft(2, '0');
+    final minutes =
+        (absOffset.inMinutes % 60).toString().padLeft(2, '0');
+    final platform = kIsWeb
+        ? 'web'
+        : Platform.operatingSystem;
+    final locale = kIsWeb ? '' : Platform.localeName;
+    return [
+      '系统上下文：',
+      '- 当前本地时间：${_formatDateTime(now)}',
+      '- 时区：${now.timeZoneName} UTC$sign$hours:$minutes',
+      if (locale.trim().isNotEmpty) '- 系统语言：$locale',
+      '- 平台：$platform',
+      '请用这些系统上下文回答时间、日期、时区等问题；不要臆测未提供的位置、日历、联系人、文件、电量或其它隐私数据。',
+    ].join('\n');
+  }
+
+  String _formatDateTime(DateTime value) {
+    String two(int number) => number.toString().padLeft(2, '0');
+    return '${value.year}-${two(value.month)}-${two(value.day)} '
+        '${two(value.hour)}:${two(value.minute)}:${two(value.second)}';
+  }
+
+  Future<void> _enableBackgroundDuringGeneration() async {
+    if (kIsWeb || !Platform.isAndroid) {
+      return;
+    }
+    try {
+      if (!_backgroundInitialized) {
+        _backgroundInitialized = await FlutterBackground.initialize(
+          androidConfig: const FlutterBackgroundAndroidConfig(
+            notificationTitle: 'Chait 正在生成',
+            notificationText: '正在保持网络连接',
+            notificationImportance: AndroidNotificationImportance.normal,
+            notificationIcon: AndroidResource(
+              name: 'ic_launcher',
+              defType: 'mipmap',
+            ),
+            enableWifiLock: true,
+          ),
+        );
+      }
+      if (_backgroundInitialized &&
+          !FlutterBackground.isBackgroundExecutionEnabled) {
+        _backgroundHeld = await FlutterBackground.enableBackgroundExecution();
+      }
+    } catch (_) {
+      _backgroundHeld = false;
+    }
+  }
+
+  Future<void> _disableBackgroundAfterGeneration() async {
+    if (kIsWeb || !Platform.isAndroid || !_backgroundHeld) {
+      return;
+    }
+    try {
+      await FlutterBackground.disableBackgroundExecution();
+    } catch (_) {
+      // The request is already finished; failing to release here should not
+      // affect the chat response.
+    } finally {
+      _backgroundHeld = false;
+    }
   }
 
   _ResolvedModelTarget _resolveModelTarget(ChatSession session) {
@@ -1150,7 +1321,9 @@ class AppStore extends ChangeNotifier {
     }
     final decoded = jsonDecode(source);
     if (decoded is Map) {
-      return decoded.map((key, value) => MapEntry(key.toString(), value.toString()));
+      return decoded.map(
+        (key, value) => MapEntry(key.toString(), value.toString()),
+      );
     }
     return {};
   }
@@ -1175,6 +1348,16 @@ class _ResolvedModelTarget {
   final AiProviderConfig provider;
   final AiModelConfig model;
   final String apiKey;
+}
+
+class _SearchOutcome {
+  const _SearchOutcome({
+    this.context = '',
+    this.error = '',
+  });
+
+  final String context;
+  final String error;
 }
 
 const _polishSystemPrompt = '''

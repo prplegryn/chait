@@ -138,7 +138,8 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _openComposerMenu() async {
-    final searchEnabled = widget.store.currentSession.searchEnabled;
+    final searchEnabled =
+        widget.store.isSearchEnabledForSession(widget.store.currentSession);
     final selected = await _showScaleMenu(
       context,
       children: [
@@ -182,8 +183,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (!provider.enabled || provider.baseUrl.trim().isEmpty) {
         return false;
       }
-      final kind = provider.kind.trim().toLowerCase();
-      return kind == 'custom' ||
+      return !searchProviderNeedsApiKey(provider.kind) ||
           widget.store.apiKeyForSearchProvider(provider.id).trim().isNotEmpty;
     } catch (_) {
       return false;
@@ -211,7 +211,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   child: session.messages.isEmpty
                       ? Padding(
                           padding: EdgeInsets.only(
-                            top: MediaQuery.paddingOf(context).top + 132,
+                            top: MediaQuery.paddingOf(context).top + 116,
                             bottom: 108,
                           ),
                           child: _EmptyChat(assistant: assistant),
@@ -222,7 +222,7 @@ class _ChatScreenState extends State<ChatScreen> {
                               ScrollViewKeyboardDismissBehavior.onDrag,
                           padding: EdgeInsets.fromLTRB(
                             20,
-                            MediaQuery.paddingOf(context).top + 142,
+                            MediaQuery.paddingOf(context).top + 124,
                             20,
                             118,
                           ),
@@ -281,14 +281,14 @@ class _ImmersiveTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final top = MediaQuery.paddingOf(context).top;
-    final contentTop = top + 15;
+    final contentTop = top + 4;
     final bg = _background(context);
     return Positioned(
       left: 0,
       right: 0,
       top: 0,
       child: SizedBox(
-        height: top + 136,
+        height: top + 118,
         child: Stack(
           children: [
             Positioned.fill(

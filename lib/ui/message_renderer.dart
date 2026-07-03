@@ -127,15 +127,15 @@ class _MarkdownText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bodyStyle = TextStyle(
-      color: textColor,
-      fontSize: isUser ? 15.5 : 16,
-      height: isUser ? 1.45 : 1.56,
+      color: isUser ? textColor : textColor.withValues(alpha: 0.94),
+      fontSize: isUser ? 15.5 : 16.2,
+      height: isUser ? 1.46 : 1.66,
       letterSpacing: 0,
       fontWeight: FontWeight.w400,
     );
     final headingStyle = bodyStyle.copyWith(
-      fontSize: isUser ? 16 : 16.5,
-      height: 1.34,
+      fontSize: isUser ? 16 : 16.8,
+      height: 1.42,
       fontWeight: FontWeight.w600,
     );
     final inlineCodeBackground =
@@ -157,7 +157,7 @@ class _MarkdownText extends StatelessWidget {
       },
       styleSheet: MarkdownStyleSheet(
         p: bodyStyle,
-        pPadding: const EdgeInsets.only(bottom: 4),
+        pPadding: const EdgeInsets.only(bottom: 7),
         a: bodyStyle.copyWith(
           color: Theme.of(context).colorScheme.primary,
           decoration: TextDecoration.underline,
@@ -166,16 +166,16 @@ class _MarkdownText extends StatelessWidget {
         ),
         strong: bodyStyle.copyWith(fontWeight: FontWeight.w600),
         em: bodyStyle.copyWith(fontStyle: FontStyle.italic),
-        h1: headingStyle.copyWith(fontSize: isUser ? 17 : 18),
-        h2: headingStyle.copyWith(fontSize: isUser ? 16.5 : 17.2),
+        h1: headingStyle.copyWith(fontSize: isUser ? 17 : 18.2),
+        h2: headingStyle.copyWith(fontSize: isUser ? 16.5 : 17.4),
         h3: headingStyle,
-        h1Padding: const EdgeInsets.only(top: 8, bottom: 6),
-        h2Padding: const EdgeInsets.only(top: 8, bottom: 5),
-        h3Padding: const EdgeInsets.only(top: 7, bottom: 4),
-        blockSpacing: 7,
-        listIndent: 22,
+        h1Padding: const EdgeInsets.only(top: 12, bottom: 8),
+        h2Padding: const EdgeInsets.only(top: 11, bottom: 7),
+        h3Padding: const EdgeInsets.only(top: 9, bottom: 5),
+        blockSpacing: isUser ? 7 : 9,
+        listIndent: isUser ? 21 : 20,
         listBullet: bodyStyle.copyWith(color: mutedColor),
-        listBulletPadding: const EdgeInsets.only(right: 7),
+        listBulletPadding: const EdgeInsets.only(right: 6),
         code: TextStyle(
           color: textColor,
           fontSize: isUser ? 13.2 : 13.4,

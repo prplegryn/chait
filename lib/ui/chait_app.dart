@@ -15,7 +15,7 @@ class ChaitApp extends StatelessWidget {
       builder: (context, _) {
         final mode = store.settings.appearanceMode;
         final color = Color(store.settings.themeColorValue);
-        final fontScale = store.settings.fontScale.clamp(0.88, 1.18);
+        final fontScale = store.settings.fontScale.clamp(0.74, 1.28);
         return MaterialApp(
           title: 'Chait',
           debugShowCheckedModeBanner: false,

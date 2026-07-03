@@ -936,7 +936,9 @@ class _SearchProviderDetailPageState extends State<SearchProviderDetailPage> {
     }
     final normalizedKind =
         kind.text.trim().isEmpty ? 'custom' : kind.text.trim().toLowerCase();
-    if (enabled && normalizedKind != 'custom' && apiKey.text.trim().isEmpty) {
+    if (enabled &&
+        searchProviderNeedsApiKey(normalizedKind) &&
+        apiKey.text.trim().isEmpty) {
       _snack(context, '请先填写 API Key。');
       return false;
     }
@@ -1034,7 +1036,7 @@ class _SearchProviderDetailPageState extends State<SearchProviderDetailPage> {
           _Field(label: '名称', hint: 'Tavily', controller: name),
           _Field(
             label: '类型',
-            hint: 'tavily / exa / brave / linkup / custom',
+            hint: 'tavily / exa / brave / serper / searxng / linkup / custom',
             controller: kind,
           ),
           _Field(
@@ -1795,7 +1797,7 @@ class _AppearancePageState extends State<AppearancePage> {
     haptics = settings.haptics;
     appearanceMode = settings.appearanceMode;
     themeColorValue = settings.themeColorValue;
-    fontScale = settings.fontScale.clamp(0.88, 1.18).toDouble();
+    fontScale = settings.fontScale.clamp(0.74, 1.28).toDouble();
   }
 
   Future<void> _save() async {
@@ -1863,10 +1865,14 @@ class _AppearancePageState extends State<AppearancePage> {
             spacing: 8,
             runSpacing: 8,
             children: const [
+              _FontScalePreset('极小', 0.76),
+              _FontScalePreset('很小', 0.84),
               _FontScalePreset('小', 0.92),
               _FontScalePreset('标准', 1),
-              _FontScalePreset('大', 1.08),
-              _FontScalePreset('特大', 1.16),
+              _FontScalePreset('舒适', 1.06),
+              _FontScalePreset('大', 1.12),
+              _FontScalePreset('特大', 1.18),
+              _FontScalePreset('超大', 1.28),
             ]
                 .map(
                   (preset) => _AppearancePill(
@@ -2405,8 +2411,7 @@ String _modelMeta(AiModelConfig model) {
 
 String _searchProviderState(AppStore store, SearchProviderConfig provider) {
   final key = store.apiKeyForSearchProvider(provider.id).trim();
-  final kind = provider.kind.trim().toLowerCase();
-  if (kind != 'custom' && key.isEmpty) {
+  if (searchProviderNeedsApiKey(provider.kind) && key.isEmpty) {
     return '未配置';
   }
   return provider.enabled ? '已启用' : '已停用';
