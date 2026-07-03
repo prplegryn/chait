@@ -9,10 +9,28 @@ import '../models.dart';
 import 'settings_screen.dart';
 
 const _ink = Color(0xFF111111);
-const _muted = Color(0xFF8B8B8B);
 const _soft = Color(0xFFF7F7F7);
-const _bubble = Color(0xFFF1F1F1);
-const _userBubble = Color(0xFFE9E9E9);
+
+Color _surface(BuildContext context) => Theme.of(context).colorScheme.surface;
+Color _background(BuildContext context) =>
+    Theme.of(context).scaffoldBackgroundColor;
+Color _textColor(BuildContext context) => Theme.of(context).colorScheme.onSurface;
+Color _mutedColor(BuildContext context) =>
+    _textColor(context).withValues(alpha: 0.52);
+Color _softColor(BuildContext context) =>
+    Theme.of(context).brightness == Brightness.dark
+        ? Colors.white.withValues(alpha: 0.06)
+        : _soft;
+Color _shadowColor(BuildContext context, [double alpha = 0.12]) =>
+    Theme.of(context).brightness == Brightness.dark
+        ? Colors.black.withValues(alpha: alpha + 0.12)
+        : Colors.black.withValues(alpha: alpha);
+Color _userBubbleColor(BuildContext context) =>
+    Theme.of(context).colorScheme.primary;
+Color _onUserBubbleColor(BuildContext context) {
+  final color = _userBubbleColor(context);
+  return color.computeLuminance() > 0.54 ? _ink : Colors.white;
+}
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key, required this.store});
@@ -100,7 +118,6 @@ class _ChatScreenState extends State<ChatScreen> {
               : Icons.public_off_rounded,
           label: searchEnabled ? '关闭搜索' : '开启搜索',
           value: 'search',
-          subtitle: searchEnabled ? '本会话将不再注入搜索结果' : '本会话发送前会先搜索',
         ),
       ],
     );
@@ -110,7 +127,31 @@ class _ChatScreenState extends State<ChatScreen> {
     if (selected == 'model') {
       _openCurrentSessionModel();
     } else if (selected == 'search') {
+      if (!searchEnabled && !_searchReady()) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('请先配置搜索服务')),
+        );
+        return;
+      }
       widget.store.setSessionSearchEnabled(!searchEnabled);
+    }
+  }
+
+  bool _searchReady() {
+    final id = widget.store.settings.defaultSearchProviderId;
+    if (id.isEmpty) {
+      return false;
+    }
+    try {
+      final provider = widget.store.searchProviderById(id);
+      if (!provider.enabled || provider.baseUrl.trim().isEmpty) {
+        return false;
+      }
+      final kind = provider.kind.trim().toLowerCase();
+      return kind == 'custom' ||
+          widget.store.apiKeyForSearchProvider(provider.id).trim().isNotEmpty;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -120,7 +161,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final assistant = widget.store.currentAssistant;
     return Scaffold(
       key: _scaffoldKey,
-      backgroundColor: Colors.white,
+      backgroundColor: _background(context),
       drawerScrimColor: Colors.black.withValues(alpha: 0.08),
       drawer: ChaitDrawer(store: widget.store),
       body: Stack(
@@ -135,7 +176,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   child: session.messages.isEmpty
                       ? Padding(
                           padding: EdgeInsets.only(
-                            top: MediaQuery.paddingOf(context).top + 84,
+                            top: MediaQuery.paddingOf(context).top + 96,
                             bottom: 108,
                           ),
                           child: _EmptyChat(assistant: assistant),
@@ -145,9 +186,9 @@ class _ChatScreenState extends State<ChatScreen> {
                           keyboardDismissBehavior:
                               ScrollViewKeyboardDismissBehavior.onDrag,
                           padding: EdgeInsets.fromLTRB(
-                            18,
-                            MediaQuery.paddingOf(context).top + 108,
-                            18,
+                            20,
+                            MediaQuery.paddingOf(context).top + 118,
+                            20,
                             118,
                           ),
                           itemCount: session.messages.length,
@@ -205,26 +246,27 @@ class _ImmersiveTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final top = MediaQuery.paddingOf(context).top;
-    final contentTop = top > 14 ? top - 14 : top * 0.35;
+    final contentTop = (top - 26).clamp(0.0, 18.0).toDouble();
+    final bg = _background(context);
     return Positioned(
       left: 0,
       right: 0,
       top: 0,
       child: Container(
-        height: top + 104,
-        decoration: const BoxDecoration(
+        height: top + 116,
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Colors.white,
-              Colors.white,
-              Color(0xFAFFFFFF),
-              Color(0xE8FFFFFF),
-              Color(0xB8FFFFFF),
-              Color(0x00FFFFFF),
+              bg,
+              bg.withValues(alpha: 0.98),
+              bg.withValues(alpha: 0.92),
+              bg.withValues(alpha: 0.74),
+              bg.withValues(alpha: 0.40),
+              bg.withValues(alpha: 0),
             ],
-            stops: [0, 0.38, 0.56, 0.72, 0.88, 1],
+            stops: const [0, 0.34, 0.52, 0.70, 0.88, 1],
           ),
         ),
         child: Padding(
@@ -286,8 +328,8 @@ class _ChatTitle extends StatelessWidget {
           assistantName,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: _ink,
+          style: TextStyle(
+            color: _textColor(context),
             fontSize: 16,
             fontWeight: FontWeight.w600,
             height: 1.1,
@@ -299,8 +341,8 @@ class _ChatTitle extends StatelessWidget {
           sessionTitle,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: _muted,
+          style: TextStyle(
+            color: _mutedColor(context),
             fontSize: 11,
             fontWeight: FontWeight.w400,
             height: 1.1,
@@ -328,15 +370,15 @@ class _EmptyChat extends StatelessWidget {
             Container(
               width: 42,
               height: 42,
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: _soft,
+                color: _softColor(context),
               ),
               alignment: Alignment.center,
               child: Text(
                 _initialOf(assistant.name),
-                style: const TextStyle(
-                  color: _ink,
+                style: TextStyle(
+                  color: _textColor(context),
                   fontSize: 18,
                   fontWeight: FontWeight.w600,
                 ),
@@ -345,8 +387,8 @@ class _EmptyChat extends StatelessWidget {
             const SizedBox(height: 14),
             Text(
               assistant.name,
-              style: const TextStyle(
-                color: _ink,
+              style: TextStyle(
+                color: _textColor(context),
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
               ),
@@ -355,8 +397,8 @@ class _EmptyChat extends StatelessWidget {
             Text(
               assistant.description,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: _muted,
+              style: TextStyle(
+                color: _mutedColor(context),
                 fontSize: 14,
                 height: 1.45,
               ),
@@ -381,57 +423,62 @@ class MessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isUser = message.isUser;
-    final isGenerating =
+    final waiting =
         !isUser && message.isStreaming && message.content.trim().isEmpty;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
+      padding: EdgeInsets.only(bottom: isUser ? 12 : 20),
       child: Column(
         crossAxisAlignment:
             isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
-          LayoutBuilder(
-            builder: (context, constraints) {
-              return Align(
-                alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: constraints.maxWidth * 0.82,
-                    minWidth: isGenerating ? 112 : 0,
-                    minHeight: isGenerating ? 42 : 0,
-                  ),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 180),
-                    curve: Curves.easeOutCubic,
-                    padding: isGenerating
-                        ? EdgeInsets.zero
-                        : const EdgeInsets.symmetric(
-                            horizontal: 15,
-                            vertical: 11,
-                          ),
-                    decoration: BoxDecoration(
-                      color: isUser ? _userBubble : _bubble,
-                      borderRadius: BorderRadius.only(
-                        topLeft: const Radius.circular(20),
-                        topRight: const Radius.circular(20),
-                        bottomLeft: Radius.circular(isUser ? 20 : 6),
-                        bottomRight: Radius.circular(isUser ? 6 : 20),
-                      ),
+          if (isUser)
+            LayoutBuilder(
+              builder: (context, constraints) {
+                return Align(
+                  alignment: Alignment.centerRight,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: constraints.maxWidth * 0.82,
                     ),
-                    child: isGenerating
-                        ? const SizedBox(
-                            width: 112,
-                            height: 42,
-                            child: _StreamingHighlight(),
-                          )
-                        : _MessageContent(message: message),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOutCubic,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 15,
+                        vertical: 11,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _userBubbleColor(context),
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(20),
+                          topRight: Radius.circular(20),
+                          bottomLeft: Radius.circular(20),
+                          bottomRight: Radius.circular(6),
+                        ),
+                      ),
+                      child: _MessageContent(message: message),
+                    ),
                   ),
-                ),
-              );
-            },
-          ),
-          if (!isUser)
+                );
+              },
+            )
+          else
             Padding(
-              padding: const EdgeInsets.only(left: 4, top: 5),
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              child: SizedBox(
+                width: double.infinity,
+                child: waiting
+                    ? _GenerationStatusText(
+                        text: message.status.trim().isEmpty
+                            ? '...'
+                            : message.status.trim(),
+                      )
+                    : _MessageContent(message: message),
+              ),
+            ),
+          if (!isUser && message.content.trim().isNotEmpty && !message.isStreaming)
+            Padding(
+              padding: const EdgeInsets.only(left: 0, top: 7),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -467,35 +514,43 @@ class _MessageContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final content = message.content;
+    final textColor =
+        message.isUser ? _onUserBubbleColor(context) : _textColor(context);
+    final muted = message.isUser
+        ? textColor.withValues(alpha: 0.72)
+        : _mutedColor(context);
+    final codeBackground = message.isUser
+        ? textColor.withValues(alpha: 0.10)
+        : _softColor(context);
     if (message.isStreaming) {
-      return _StreamingTextContent(text: content);
+      return _StreamingTextContent(text: content, color: textColor);
     }
     final display = _formatForMarkdown(content);
     return MarkdownBody(
       data: display,
       softLineBreak: true,
       styleSheet: MarkdownStyleSheet(
-        p: const TextStyle(
-          color: _ink,
+        p: TextStyle(
+          color: textColor,
           fontSize: 15.5,
           height: 1.48,
           letterSpacing: 0,
         ),
-        code: const TextStyle(
-          color: _ink,
+        code: TextStyle(
+          color: textColor,
           fontSize: 13.5,
           height: 1.45,
           fontFamily: 'monospace',
-          backgroundColor: Color(0xFFE8E8E8),
+          backgroundColor: codeBackground,
         ),
         codeblockDecoration: BoxDecoration(
-          color: const Color(0xFFE8E8E8),
+          color: codeBackground,
           borderRadius: BorderRadius.circular(12),
         ),
-        blockquoteDecoration: const BoxDecoration(
-          border: Border(left: BorderSide(color: Color(0xFFD5D5D5), width: 3)),
+        blockquoteDecoration: BoxDecoration(
+          border: Border(left: BorderSide(color: muted, width: 3)),
         ),
-        tableBorder: TableBorder.all(color: const Color(0xFFDCDCDC)),
+        tableBorder: TableBorder.all(color: muted.withValues(alpha: 0.55)),
       ),
     );
   }
@@ -521,9 +576,10 @@ class _MessageContent extends StatelessWidget {
 }
 
 class _StreamingTextContent extends StatefulWidget {
-  const _StreamingTextContent({required this.text});
+  const _StreamingTextContent({required this.text, required this.color});
 
   final String text;
+  final Color color;
 
   @override
   State<_StreamingTextContent> createState() => _StreamingTextContentState();
@@ -583,13 +639,13 @@ class _StreamingTextContentState extends State<_StreamingTextContent>
               TextSpan(
                 text: suffix,
                 style: TextStyle(
-                  color: _ink.withValues(alpha: value),
+                  color: widget.color.withValues(alpha: value),
                 ),
               ),
             ],
           ),
-          style: const TextStyle(
-            color: _ink,
+          style: TextStyle(
+            color: widget.color,
             fontSize: 15.5,
             height: 1.48,
             letterSpacing: 0,
@@ -618,20 +674,22 @@ class _TinyAction extends StatelessWidget {
       visualDensity: VisualDensity.compact,
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints.tightFor(width: 30, height: 28),
-      icon: Icon(icon, size: 15, color: _muted),
+      icon: Icon(icon, size: 15, color: _mutedColor(context)),
       onPressed: onPressed,
     );
   }
 }
 
-class _StreamingHighlight extends StatefulWidget {
-  const _StreamingHighlight();
+class _GenerationStatusText extends StatefulWidget {
+  const _GenerationStatusText({required this.text});
+
+  final String text;
 
   @override
-  State<_StreamingHighlight> createState() => _StreamingHighlightState();
+  State<_GenerationStatusText> createState() => _GenerationStatusTextState();
 }
 
-class _StreamingHighlightState extends State<_StreamingHighlight>
+class _GenerationStatusTextState extends State<_GenerationStatusText>
     with SingleTickerProviderStateMixin {
   late final AnimationController controller;
 
@@ -640,8 +698,8 @@ class _StreamingHighlightState extends State<_StreamingHighlight>
     super.initState();
     controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1100),
-    )..repeat();
+      duration: const Duration(milliseconds: 1500),
+    )..repeat(reverse: true);
   }
 
   @override
@@ -652,42 +710,21 @@ class _StreamingHighlightState extends State<_StreamingHighlight>
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return AnimatedBuilder(
-          animation: controller,
-          builder: (context, _) {
-            final width = constraints.maxWidth;
-            final stripWidth = width < 80 ? 48.0 : width * 0.48;
-            return ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: Stack(
-                children: [
-                  Container(color: const Color(0xFFECECEC)),
-                  Positioned(
-                    top: 0,
-                    bottom: 0,
-                    left: (width + stripWidth) * controller.value - stripWidth,
-                    child: Container(
-                      width: stripWidth,
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            Color(0x00FFFFFF),
-                            Color(0xD9FFFFFF),
-                            Color(0xFFFFFFFF),
-                            Color(0xD9FFFFFF),
-                            Color(0x00FFFFFF),
-                          ],
-                          stops: [0, 0.28, 0.5, 0.72, 1],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        final opacity = 0.34 + controller.value * 0.34;
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 7),
+          child: Text(
+            widget.text,
+            style: TextStyle(
+              color: _mutedColor(context).withValues(alpha: opacity),
+              fontSize: 14.5,
+              height: 1.45,
+              letterSpacing: 0,
+            ),
+          ),
         );
       },
     );
@@ -735,85 +772,94 @@ class _ComposerState extends State<Composer> {
 
   @override
   Widget build(BuildContext context) {
+    final sendColor = _textColor(context);
     return SafeArea(
       top: false,
       child: Container(
-      color: Colors.transparent,
-      padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 190),
-        curve: Curves.easeOutCubic,
-        constraints: const BoxConstraints(minHeight: 48, maxHeight: 154),
-        padding: const EdgeInsets.fromLTRB(5, 4, 5, 4),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(26),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.10),
-              blurRadius: 24,
-              spreadRadius: 1,
-            ),
-          ],
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            IconButton(
-              tooltip: '添加',
-              visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.add_rounded, color: _muted, size: 24),
-              onPressed: widget.onOpenMenu,
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 7),
-                child: TextField(
-                  controller: widget.controller,
-                  focusNode: widget.focusNode,
-                  minLines: 1,
-                  maxLines: 6,
-                  textInputAction: TextInputAction.newline,
-                  cursorColor: _ink,
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    border: InputBorder.none,
-                    hintText: '问点什么…',
-                    hintStyle: TextStyle(color: _muted, fontSize: 15.5),
-                  ),
-                  style: const TextStyle(
-                    color: _ink,
-                    fontSize: 15.5,
-                    height: 1.35,
-                    letterSpacing: 0,
+        color: Colors.transparent,
+        padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 190),
+          curve: Curves.easeOutCubic,
+          constraints: const BoxConstraints(minHeight: 48, maxHeight: 154),
+          padding: const EdgeInsets.fromLTRB(5, 4, 5, 4),
+          decoration: BoxDecoration(
+            color: _surface(context),
+            borderRadius: BorderRadius.circular(26),
+            boxShadow: [
+              BoxShadow(
+                color: _shadowColor(context, 0.10),
+                blurRadius: 24,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              IconButton(
+                tooltip: '添加',
+                visualDensity: VisualDensity.compact,
+                icon: Icon(
+                  Icons.add_rounded,
+                  color: _mutedColor(context),
+                  size: 24,
+                ),
+                onPressed: widget.onOpenMenu,
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 7),
+                  child: TextField(
+                    controller: widget.controller,
+                    focusNode: widget.focusNode,
+                    minLines: 1,
+                    maxLines: 6,
+                    textInputAction: TextInputAction.newline,
+                    cursorColor: sendColor,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      border: InputBorder.none,
+                      hintText: '问点什么…',
+                      hintStyle: TextStyle(
+                        color: _mutedColor(context),
+                        fontSize: 15.5,
+                      ),
+                    ),
+                    style: TextStyle(
+                      color: sendColor,
+                      fontSize: 15.5,
+                      height: 1.35,
+                      letterSpacing: 0,
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(width: 4),
-            IconButton(
-              tooltip: widget.isSending ? '停止' : '发送',
-              visualDensity: VisualDensity.compact,
-              style: IconButton.styleFrom(
-                backgroundColor: widget.isSending || hasText
-                    ? _ink
-                    : const Color(0xFFE4E4E4),
-                foregroundColor: Colors.white,
-                fixedSize: const Size(36, 36),
+              const SizedBox(width: 4),
+              IconButton(
+                tooltip: widget.isSending ? '停止' : '发送',
+                visualDensity: VisualDensity.compact,
+                style: IconButton.styleFrom(
+                  backgroundColor: widget.isSending || hasText
+                      ? sendColor
+                      : _softColor(context),
+                  foregroundColor: _background(context),
+                  disabledForegroundColor: _mutedColor(context),
+                  fixedSize: const Size(36, 36),
+                ),
+                icon: Icon(
+                  widget.isSending ? Icons.stop_rounded : Icons.arrow_upward,
+                  size: 19,
+                ),
+                onPressed: widget.isSending
+                    ? widget.onStop
+                    : hasText
+                        ? widget.onSend
+                        : null,
               ),
-              icon: Icon(
-                widget.isSending ? Icons.stop_rounded : Icons.arrow_upward,
-                size: 19,
-              ),
-              onPressed: widget.isSending
-                  ? widget.onStop
-                  : hasText
-                      ? widget.onSend
-                      : null,
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
       ),
     );
   }
@@ -835,79 +881,103 @@ class _ChaitDrawerState extends State<ChaitDrawer> {
   Widget build(BuildContext context) {
     final pinned = _filteredSessions(true);
     final recent = _filteredSessions(false);
+    final padding = MediaQuery.paddingOf(context);
     return Drawer(
       width: MediaQuery.sizeOf(context).width * 0.84,
-      backgroundColor: Colors.white,
+      backgroundColor: _surface(context),
       elevation: 12,
-      shadowColor: Colors.black.withValues(alpha: 0.12),
+      shadowColor: _shadowColor(context, 0.12),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.horizontal(right: Radius.circular(22)),
       ),
-      child: SafeArea(
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(0, 76, 0, 92),
-                children: [
-                  if (pinned.isNotEmpty) ...[
-                    _SectionLabel('置顶'),
-                    ...pinned.map(_sessionRow),
-                  ],
-                  _SectionLabel('最近'),
-                  if (recent.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(18, 12, 18, 8),
-                      child: Text(
-                        '没有匹配的聊天',
-                        style: TextStyle(color: _muted, fontSize: 13),
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: ListView(
+              padding: EdgeInsets.fromLTRB(0, padding.top + 76, 0, 26),
+              children: [
+                if (pinned.isNotEmpty) ...[
+                  _SectionLabel('置顶'),
+                  ...pinned.map(_sessionRow),
+                ],
+                _SectionLabel('最近'),
+                if (recent.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 12, 18, 8),
+                    child: Text(
+                      '没有匹配的聊天',
+                      style: TextStyle(
+                        color: _mutedColor(context),
+                        fontSize: 13,
                       ),
-                    )
-                  else
-                    ...recent.map(_sessionRow),
-                ],
-              ),
-            ),
-            Positioned(
-              left: 16,
-              right: 16,
-              top: 10,
-              child: _DrawerSearchField(
-                onChanged: (value) => setState(() => query = value),
-              ),
-            ),
-            Positioned(
-              left: 14,
-              right: 14,
-              bottom: 14,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _FloatingPillButton(
-                      label: widget.store.currentAssistant.name,
-                      icon: Icons.person_outline_rounded,
-                      onTap: _showAssistantChooser,
                     ),
+                  )
+                else
+                  ...recent.map(_sessionRow),
+              ],
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            top: 0,
+            height: padding.top + 92,
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      _surface(context),
+                      _surface(context).withValues(alpha: 0.92),
+                      _surface(context).withValues(alpha: 0),
+                    ],
+                    stops: const [0, 0.62, 1],
                   ),
-                  const SizedBox(width: 10),
-                  _RoundShadowButton(
-                    icon: Icons.settings_outlined,
-                    tooltip: '设置',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => SettingsScreen(store: widget.store),
-                        ),
-                      );
-                    },
-                  ),
-                ],
+                ),
               ),
             ),
-          ],
+          ),
+          Positioned(
+            left: 16,
+            right: 16,
+            top: padding.top + 10,
+            child: _DrawerSearchField(
+              onChanged: (value) => setState(() => query = value),
+            ),
+          ),
+          Positioned(
+            left: 14,
+            right: 14,
+            bottom: padding.bottom + 14,
+            child: Row(
+              children: [
+                Expanded(
+                  child: _FloatingPillButton(
+                    label: widget.store.currentAssistant.name,
+                    icon: Icons.person_outline_rounded,
+                    onTap: _showAssistantChooser,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                _RoundShadowButton(
+                  icon: Icons.settings_outlined,
+                  tooltip: '设置',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => SettingsScreen(store: widget.store),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ],
         ),
-      ),
     );
   }
 
@@ -926,7 +996,7 @@ class _ChaitDrawerState extends State<ChaitDrawer> {
       selected: session.id == widget.store.currentSessionId,
       leading: Icon(
         session.pinned ? Icons.push_pin_rounded : Icons.chat_bubble_outline,
-        color: _muted,
+        color: _mutedColor(context),
         size: 19,
       ),
       onLongPress: () => _showSessionActions(session),
@@ -951,13 +1021,54 @@ class _ChaitDrawerState extends State<ChaitDrawer> {
           label: '删除',
           value: 'delete',
         ),
+        const _MenuAction(
+          icon: Icons.playlist_remove_rounded,
+          label: '清除此会话以前的历史',
+          value: 'clear_before',
+        ),
+        const _MenuAction(
+          icon: Icons.clear_all_rounded,
+          label: '清除所有会话历史',
+          value: 'clear_all',
+        ),
       ],
     );
     if (action == 'pin') {
       widget.store.togglePin(session);
     } else if (action == 'delete') {
       widget.store.deleteSession(session.id);
+    } else if (action == 'clear_before') {
+      final ok = await _confirmClear('清除此会话以前的历史？');
+      if (ok) {
+        widget.store.clearSessionsBefore(session);
+      }
+    } else if (action == 'clear_all') {
+      final ok = await _confirmClear('清除所有会话历史？');
+      if (ok) {
+        widget.store.clearUnpinnedSessions();
+      }
     }
+  }
+
+  Future<bool> _confirmClear(String title) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: const Text('置顶会话会保留。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('清除'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
   }
 
   Future<void> _showAssistantChooser() async {
@@ -990,11 +1101,11 @@ class _DrawerSearchField extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface(context),
         borderRadius: BorderRadius.circular(22),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
+            color: _shadowColor(context, 0.08),
             blurRadius: 22,
             spreadRadius: 1,
           ),
@@ -1002,13 +1113,17 @@ class _DrawerSearchField extends StatelessWidget {
       ),
       child: TextField(
         onChanged: onChanged,
-        cursorColor: _ink,
+        cursorColor: _textColor(context),
         decoration: InputDecoration(
           hintText: '搜索聊天',
-          hintStyle: const TextStyle(color: _muted, fontSize: 14),
-          prefixIcon: const Icon(Icons.search_rounded, color: _muted, size: 20),
+          hintStyle: TextStyle(color: _mutedColor(context), fontSize: 14),
+          prefixIcon: Icon(
+            Icons.search_rounded,
+            color: _mutedColor(context),
+            size: 20,
+          ),
           filled: true,
-          fillColor: Colors.white,
+          fillColor: _surface(context),
           isDense: true,
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
@@ -1017,8 +1132,8 @@ class _DrawerSearchField extends StatelessWidget {
             borderSide: BorderSide.none,
           ),
         ),
-        style: const TextStyle(
-          color: _ink,
+        style: TextStyle(
+          color: _textColor(context),
           fontSize: 14.5,
           height: 1.25,
           letterSpacing: 0,
@@ -1041,8 +1156,8 @@ class _SectionLabel extends StatelessWidget {
         alignment: Alignment.centerLeft,
         child: Text(
           label,
-          style: const TextStyle(
-            color: _muted,
+          style: TextStyle(
+            color: _mutedColor(context),
             fontSize: 12,
             fontWeight: FontWeight.w500,
           ),
@@ -1072,7 +1187,7 @@ class _DrawerRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 1),
       child: Material(
-        color: selected ? const Color(0xFFF2F2F2) : Colors.transparent,
+        color: selected ? _softColor(context) : Colors.transparent,
         borderRadius: BorderRadius.circular(14),
         child: InkWell(
           borderRadius: BorderRadius.circular(14),
@@ -1094,8 +1209,8 @@ class _DrawerRow extends StatelessWidget {
                         title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: _ink,
+                        style: TextStyle(
+                          color: _textColor(context),
                           fontSize: 14.5,
                           fontWeight: FontWeight.w500,
                         ),
@@ -1127,11 +1242,11 @@ class _FloatingPillButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface(context),
         borderRadius: BorderRadius.circular(23),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.12),
+            color: _shadowColor(context, 0.12),
             blurRadius: 24,
             spreadRadius: 1,
           ),
@@ -1148,15 +1263,15 @@ class _FloatingPillButton extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(icon, color: _ink, size: 18),
+                Icon(icon, color: _textColor(context), size: 18),
                 const SizedBox(width: 7),
                 Flexible(
                   child: Text(
                     label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: _ink,
+                    style: TextStyle(
+                      color: _textColor(context),
                       fontSize: 14.5,
                       fontWeight: FontWeight.w600,
                     ),
@@ -1186,11 +1301,11 @@ class _RoundShadowButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface(context),
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.12),
+            color: _shadowColor(context, 0.12),
             blurRadius: 24,
             spreadRadius: 1,
           ),
@@ -1201,7 +1316,7 @@ class _RoundShadowButton extends StatelessWidget {
         shape: const CircleBorder(),
         child: IconButton(
           tooltip: tooltip,
-          icon: Icon(icon, color: _ink, size: 20),
+          icon: Icon(icon, color: _textColor(context), size: 20),
           onPressed: onTap,
         ),
       ),
@@ -1225,8 +1340,8 @@ class _MenuAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: Icon(icon, color: _ink),
-      title: Text(label),
+      leading: Icon(icon, color: _textColor(context)),
+      title: Text(label, style: TextStyle(color: _textColor(context))),
       subtitle: subtitle.isEmpty ? null : Text(subtitle),
       onTap: () => Navigator.pop(context, value),
     );
@@ -1251,22 +1366,19 @@ Future<String?> _showScaleMenu(
             width: MediaQuery.sizeOf(context).width * 0.76,
             constraints: const BoxConstraints(maxWidth: 360),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: _surface(context),
               borderRadius: BorderRadius.circular(24),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.14),
+                  color: _shadowColor(context, 0.14),
                   blurRadius: 34,
                   spreadRadius: 1,
                 ),
               ],
             ),
-            child: SafeArea(
-              minimum: const EdgeInsets.symmetric(vertical: 8),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: children,
-              ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: children,
             ),
           ),
         ),
@@ -1312,11 +1424,11 @@ Future<void> showModelChoiceSheet({
         child: Container(
           margin: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: _surface(context),
             borderRadius: BorderRadius.circular(24),
             boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.12),
+                  color: _shadowColor(context, 0.12),
                   blurRadius: 30,
                   spreadRadius: 1,
                 ),
@@ -1325,14 +1437,14 @@ Future<void> showModelChoiceSheet({
           child: SafeArea(
             child: ListView(
               shrinkWrap: true,
-              padding: const EdgeInsets.symmetric(vertical: 10),
+              padding: const EdgeInsets.only(bottom: 10),
               children: [
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 8, 18, 6),
+                  padding: const EdgeInsets.fromLTRB(18, 14, 18, 6),
                   child: Text(
                     title,
-                    style: const TextStyle(
-                      color: _ink,
+                    style: TextStyle(
+                      color: _textColor(context),
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
                     ),
@@ -1344,11 +1456,11 @@ Future<void> showModelChoiceSheet({
                   onTap: () => Navigator.pop(context, ''),
                 ),
                 if (models.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(18),
+                  Padding(
+                    padding: const EdgeInsets.all(18),
                     child: Text(
                       '暂无可选模型',
-                      style: TextStyle(color: _muted),
+                      style: TextStyle(color: _mutedColor(context)),
                     ),
                   ),
                 ...models.map(
@@ -1362,6 +1474,7 @@ Future<void> showModelChoiceSheet({
                       model.providerName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: _mutedColor(context)),
                     ),
                     trailing:
                         value == model.id ? const Icon(Icons.check_rounded) : null,

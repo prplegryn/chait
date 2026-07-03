@@ -205,6 +205,36 @@ class AppStore extends ChangeNotifier {
     return balance;
   }
 
+  Future<void> refreshProviderBalances() async {
+    var changed = false;
+    for (final provider in settings.providers) {
+      if (provider.balancePath.trim().isEmpty ||
+          apiKeyForProvider(provider.id).trim().isEmpty) {
+        continue;
+      }
+      String balance;
+      try {
+        balance = await AiClient().fetchBalance(
+          provider: provider,
+          apiKey: apiKeyForProvider(provider.id),
+        );
+      } catch (_) {
+        continue;
+      }
+      if (balance.trim().isEmpty) {
+        continue;
+      }
+      provider
+        ..balanceText = balance
+        ..balanceUpdatedAt = DateTime.now();
+      changed = true;
+    }
+    if (changed) {
+      notifyListeners();
+      await save();
+    }
+  }
+
   Future<List<AiModelConfig>> refreshProviderModels(String providerId) async {
     final provider = providerById(providerId);
     final fetched = await AiClient().fetchModels(
@@ -316,6 +346,21 @@ class AppStore extends ChangeNotifier {
     await save();
   }
 
+  Future<String> testSearchProvider(String providerId) async {
+    final provider = SearchProviderConfig.fromJson(
+      searchProviderById(providerId).toJson(),
+    )..enabled = true;
+    final results = await SearchClient().search(
+      provider: provider,
+      apiKey: apiKeyForSearchProvider(provider.id),
+      query: 'OpenAI',
+    );
+    if (results.isEmpty) {
+      return '连接成功，暂无结果';
+    }
+    return '连接成功，返回 ${results.length} 条结果';
+  }
+
   Future<void> updateMcpServer(McpServerConfig server) async {
     final index = settings.mcpServers.indexWhere((item) => item.id == server.id);
     if (index == -1) {
@@ -331,6 +376,29 @@ class AppStore extends ChangeNotifier {
     settings.mcpServers.removeWhere((server) => server.id == serverId);
     notifyListeners();
     await save();
+  }
+
+  Future<String> testModel(String modelId) async {
+    final model = modelById(modelId);
+    final provider = providerById(model.providerId);
+    final key = apiKeyForProvider(provider.id);
+    if (provider.baseUrl.trim().isEmpty || model.name.trim().isEmpty || key.isEmpty) {
+      throw const AiException('请检查模型所属服务商的 Base URL、API Key 和模型。');
+    }
+    final text = await AiClient().generateText(
+      settings: settings,
+      apiKey: key,
+      assistant: currentAssistant,
+      baseUrl: provider.baseUrl,
+      model: model.name,
+      customHeadersJson: provider.customHeadersJson,
+      systemPrompt: '只回复 OK。',
+      userPrompt: '请回复 OK。',
+      temperature: 0,
+      maxTokens: 16,
+    );
+    final normalized = text.trim();
+    return normalized.isEmpty ? '连接成功' : '连接成功：$normalized';
   }
 
   Future<void> upsertAssistant(AssistantPreset preset) async {
@@ -416,6 +484,35 @@ class AppStore extends ChangeNotifier {
     await save();
   }
 
+  Future<void> clearUnpinnedSessions() async {
+    sessions.removeWhere((session) => !session.pinned);
+    if (sessions.isEmpty) {
+      sessions.add(_newSession(currentAssistantId));
+    }
+    if (!sessions.any((session) => session.id == currentSessionId)) {
+      currentSessionId = sessions.first.id;
+      currentAssistantId = sessions.first.assistantId;
+    }
+    notifyListeners();
+    await save();
+  }
+
+  Future<void> clearSessionsBefore(ChatSession anchor) async {
+    final cutoff = anchor.updatedAt;
+    sessions.removeWhere(
+      (session) => !session.pinned && session.updatedAt.isBefore(cutoff),
+    );
+    if (sessions.isEmpty) {
+      sessions.add(_newSession(currentAssistantId));
+    }
+    if (!sessions.any((session) => session.id == currentSessionId)) {
+      currentSessionId = sessions.first.id;
+      currentAssistantId = sessions.first.assistantId;
+    }
+    notifyListeners();
+    await save();
+  }
+
   Future<void> sendMessage(String text) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty || isSending) {
@@ -444,6 +541,7 @@ class AppStore extends ChangeNotifier {
       content: '',
       createdAt: DateTime.now(),
       isStreaming: true,
+      status: _hasUsableSearch(session) ? '搜索中' : '...',
     );
     session.messages.add(assistantMessage);
     isSending = true;
@@ -455,7 +553,13 @@ class AppStore extends ChangeNotifier {
     try {
       final target = _resolveModelTarget(session);
       final assistant = assistantForSession(session);
+      if (_hasUsableSearch(session)) {
+        assistantMessage.status = '搜索中';
+        notifyListeners();
+      }
       final searchContext = await _searchContextFor(session, trimmed);
+      assistantMessage.status = _statusForModel(target.model);
+      notifyListeners();
       final outboundMessages = [
         if (searchContext.isNotEmpty)
           ChatMessage(
@@ -480,6 +584,7 @@ class AppStore extends ChangeNotifier {
         ),
         isCancelled: () => _cancelRequested,
         onDelta: (delta) {
+          assistantMessage.status = '';
           assistantMessage.content += delta;
           notifyListeners();
         },
@@ -497,6 +602,7 @@ class AppStore extends ChangeNotifier {
       }
     } finally {
       assistantMessage.isStreaming = false;
+      assistantMessage.status = '';
       isSending = false;
       _activeClient = null;
       _cancelRequested = false;
@@ -714,6 +820,7 @@ class AppStore extends ChangeNotifier {
       }
       for (final message in session.messages) {
         message.isStreaming = false;
+        message.status = '';
       }
     }
     _repairModelSelections();
@@ -841,7 +948,7 @@ class AppStore extends ChangeNotifier {
   }
 
   Future<String> _searchContextFor(ChatSession session, String prompt) async {
-    if (!session.searchEnabled || settings.defaultSearchProviderId.isEmpty) {
+    if (!_hasUsableSearch(session)) {
       return '';
     }
     try {
@@ -856,6 +963,35 @@ class AppStore extends ChangeNotifier {
     } catch (_) {
       return '';
     }
+  }
+
+  bool _hasUsableSearch(ChatSession session) {
+    if (!session.searchEnabled || settings.defaultSearchProviderId.isEmpty) {
+      return false;
+    }
+    try {
+      final provider = searchProviderById(settings.defaultSearchProviderId);
+      if (!provider.enabled || provider.baseUrl.trim().isEmpty) {
+        return false;
+      }
+      final kind = provider.kind.trim().toLowerCase();
+      return kind == 'custom' ||
+          apiKeyForSearchProvider(provider.id).trim().isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  String _statusForModel(AiModelConfig model) {
+    final name = model.name.toLowerCase();
+    if (name.contains('reason') ||
+        name.contains('thinking') ||
+        name.contains('r1') ||
+        name.contains('o1') ||
+        name.contains('o3')) {
+      return '思考中';
+    }
+    return '...';
   }
 
   _ResolvedModelTarget _resolveModelTarget(ChatSession session) {

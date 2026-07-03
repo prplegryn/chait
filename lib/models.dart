@@ -214,6 +214,7 @@ class ChatMessage {
     required this.content,
     required this.createdAt,
     this.isStreaming = false,
+    this.status = '',
     this.error = '',
     this.raw = '',
   });
@@ -223,6 +224,7 @@ class ChatMessage {
   String content;
   final DateTime createdAt;
   bool isStreaming;
+  String status;
   String error;
   String raw;
 
@@ -234,6 +236,7 @@ class ChatMessage {
         'content': content,
         'createdAt': createdAt.toIso8601String(),
         'isStreaming': isStreaming,
+        'status': status,
         'error': error,
         'raw': raw,
       };
@@ -246,6 +249,7 @@ class ChatMessage {
       createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ??
           DateTime.now(),
       isStreaming: json['isStreaming'] as bool? ?? false,
+      status: json['status'] as String? ?? '',
       error: json['error'] as String? ?? '',
       raw: json['raw'] as String? ?? '',
     );
@@ -436,6 +440,8 @@ class AppSettings {
     this.responseFormat = '',
     this.customHeadersJson = '{}',
     this.extraBodyJson = '{}',
+    this.appearanceMode = 'light',
+    this.themeColorValue = 0xFFE9E9E9,
     this.haptics = true,
   })  : providers = providers ?? [],
         models = models ?? [],
@@ -464,6 +470,8 @@ class AppSettings {
   String responseFormat;
   String customHeadersJson;
   String extraBodyJson;
+  String appearanceMode;
+  int themeColorValue;
   bool haptics;
 
   Map<String, Object?> toJson() => {
@@ -490,6 +498,8 @@ class AppSettings {
         'responseFormat': responseFormat,
         'customHeadersJson': customHeadersJson,
         'extraBodyJson': extraBodyJson,
+        'appearanceMode': appearanceMode,
+        'themeColorValue': themeColorValue,
         'haptics': haptics,
       };
 
@@ -519,6 +529,8 @@ class AppSettings {
       responseFormat: json['responseFormat'] as String? ?? '',
       customHeadersJson: json['customHeadersJson'] as String? ?? '{}',
       extraBodyJson: json['extraBodyJson'] as String? ?? '{}',
+      appearanceMode: json['appearanceMode'] as String? ?? 'light',
+      themeColorValue: _toInt(json['themeColorValue']) ?? 0xFFE9E9E9,
       haptics: json['haptics'] as bool? ?? true,
     );
   }

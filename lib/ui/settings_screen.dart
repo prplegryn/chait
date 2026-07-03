@@ -6,10 +6,24 @@ import 'package:flutter/services.dart';
 import '../app_store.dart';
 import '../models.dart';
 
-const _ink = Color(0xFF111111);
-const _muted = Color(0xFF8B8B8B);
-const _line = Color(0xFFEDEDED);
 const _soft = Color(0xFFF7F7F7);
+
+Color _surface(BuildContext context) => Theme.of(context).colorScheme.surface;
+Color _background(BuildContext context) =>
+    Theme.of(context).scaffoldBackgroundColor;
+Color _textColor(BuildContext context) => Theme.of(context).colorScheme.onSurface;
+Color _mutedColor(BuildContext context) =>
+    _textColor(context).withValues(alpha: 0.52);
+Color _lineColor(BuildContext context) =>
+    Theme.of(context).colorScheme.outline.withValues(alpha: 0.72);
+Color _softColor(BuildContext context) =>
+    Theme.of(context).brightness == Brightness.dark
+        ? Colors.white.withValues(alpha: 0.06)
+        : _soft;
+Color _shadowColor(BuildContext context, [double alpha = 0.08]) =>
+    Theme.of(context).brightness == Brightness.dark
+        ? Colors.black.withValues(alpha: alpha + 0.12)
+        : Colors.black.withValues(alpha: alpha);
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key, required this.store});
@@ -39,7 +53,7 @@ class SettingsScreen extends StatelessWidget {
                   ),
                   _SettingsTile(
                     title: '服务商设定',
-                    subtitle: '实时获取模型、勾选可用模型',
+                    subtitle: '服务商、密钥、模型',
                     icon: Icons.cloud_outlined,
                     onTap: () => _open(
                       context,
@@ -80,7 +94,7 @@ class SettingsScreen extends StatelessWidget {
                 children: [
                   _SettingsTile(
                     title: '外观',
-                    subtitle: '触感反馈',
+                    subtitle: '主题、颜色、触感',
                     icon: Icons.contrast_rounded,
                     onTap: () => _open(
                       context,
@@ -123,6 +137,14 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
   String query = '';
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      widget.store.refreshProviderBalances();
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: widget.store,
@@ -162,6 +184,7 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
                       (model) => model.providerId == provider.id && model.enabled,
                     )
                     .length;
+                final summary = _providerSummary(provider, enabledCount);
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 10),
                   child: _SettingsCard(
@@ -170,35 +193,28 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
                         horizontal: 14,
                         vertical: 6,
                       ),
-                      title: Text(provider.name),
-                      subtitle: Padding(
-                        padding: const EdgeInsets.only(top: 3),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              enabledCount == 0
-                                  ? '未添加模型'
-                                  : '已添加 $enabledCount 个模型',
-                            ),
-                            if (provider.balanceText.trim().isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 2),
-                                child: Text(
-                                  '余额 ${provider.balanceText}',
-                                  style: const TextStyle(
-                                    color: _muted,
-                                    fontSize: 12,
-                                    height: 1.2,
-                                  ),
+                      title: Text(
+                        provider.name,
+                        style: TextStyle(color: _textColor(context)),
+                      ),
+                      subtitle: summary.isEmpty
+                          ? null
+                          : Padding(
+                              padding: const EdgeInsets.only(top: 3),
+                              child: Text(
+                                summary,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: _mutedColor(context),
+                                  fontSize: 12,
+                                  height: 1.2,
                                 ),
                               ),
-                          ],
-                        ),
                       ),
-                      trailing: const Icon(
+                      trailing: Icon(
                         Icons.chevron_right_rounded,
-                        color: _muted,
+                        color: _mutedColor(context),
                       ),
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(
@@ -269,6 +285,24 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
       ),
     );
   }
+
+  String _providerSummary(AiProviderConfig provider, int enabledCount) {
+    final hasKey = widget.store.apiKeyForProvider(provider.id).trim().isNotEmpty;
+    final balance = provider.balanceText.trim();
+    final configured = hasKey ||
+        enabledCount > 0 ||
+        balance.isNotEmpty ||
+        provider.updatedAt != null ||
+        (provider.isCustom && provider.baseUrl.trim().isNotEmpty);
+    if (!configured) {
+      return '';
+    }
+    final parts = <String>['$enabledCount models'];
+    if (balance.isNotEmpty) {
+      parts.add(balance);
+    }
+    return parts.join(' · ');
+  }
 }
 
 class ProviderDetailPage extends StatefulWidget {
@@ -293,7 +327,7 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
   late final TextEditingController apiKey;
   late final TextEditingController headers;
   bool loading = false;
-  bool loadingBalance = false;
+  String testingModelId = '';
   String error = '';
 
   @override
@@ -309,6 +343,9 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
       text: widget.store.apiKeyForProvider(provider.id),
     );
     headers = TextEditingController(text: provider.customHeadersJson);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _refreshBalanceQuietly();
+    });
   }
 
   @override
@@ -332,6 +369,7 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
       ..modelsPath = modelsPath.text.trim().isEmpty ? '/models' : modelsPath.text.trim()
       ..customHeadersJson = headers.text.trim().isEmpty ? '{}' : headers.text;
     await widget.store.updateProvider(provider, apiKey: apiKey.text.trim());
+    await _refreshBalanceQuietly();
   }
 
   Future<void> _refresh() async {
@@ -351,22 +389,37 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
     }
   }
 
-  Future<void> _refreshBalance() async {
-    if (provider.balancePath.trim().isEmpty) {
-      _snack(context, '该服务商没有可用余额接口。');
+  Future<void> _refreshBalanceQuietly() async {
+    if (provider.balancePath.trim().isEmpty ||
+        apiKey.text.trim().isEmpty ||
+        !mounted) {
+      return;
+    }
+    try {
+      await widget.store.refreshProviderBalance(provider.id);
+    } catch (_) {
+      return;
+    }
+  }
+
+  Future<void> _testModel(AiModelConfig model) async {
+    if (testingModelId.isNotEmpty) {
       return;
     }
     await _save();
-    setState(() => loadingBalance = true);
+    setState(() => testingModelId = model.id);
     try {
-      final balance = await widget.store.refreshProviderBalance(provider.id);
-      if (!mounted) {
-        return;
+      final result = await widget.store.testModel(model.id);
+      if (mounted) {
+        _snack(context, result);
       }
-      _snack(context, balance.isEmpty ? '该接口没有返回可识别余额。' : '余额已更新');
+    } catch (err) {
+      if (mounted) {
+        _snack(context, err.toString());
+      }
     } finally {
       if (mounted) {
-        setState(() => loadingBalance = false);
+        setState(() => testingModelId = '');
       }
     }
   }
@@ -396,6 +449,7 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
     return AnimatedBuilder(
       animation: widget.store,
       builder: (context, _) {
+        final currentProvider = widget.store.providerById(provider.id);
         return _EditScaffold(
           title: provider.name,
           onSave: _save,
@@ -444,19 +498,19 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
                 label: loading ? '正在刷新…' : '从服务商刷新模型',
                 onPressed: loading ? () {} : _refresh,
               ),
-              if (provider.balancePath.trim().isNotEmpty) ...[
-                const SizedBox(height: 10),
-                _ActionButton(
-                  label: loadingBalance ? '正在获取余额…' : '获取余额',
-                  onPressed: loadingBalance ? () {} : _refreshBalance,
-                ),
-              ],
-              if (provider.balanceText.trim().isNotEmpty)
+              if (currentProvider.balanceText.trim().isNotEmpty)
                 Padding(
-                  padding: const EdgeInsets.only(top: 10),
-                  child: _StaticNotice(
-                    title: '当前余额',
-                    body: provider.balanceText,
+                  padding: const EdgeInsets.only(top: 8, bottom: 4),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      '余额 ${currentProvider.balanceText}',
+                      style: TextStyle(
+                        color: _mutedColor(context),
+                        fontSize: 12,
+                        height: 1.25,
+                      ),
+                    ),
                   ),
                 ),
               if (error.isNotEmpty) ...[
@@ -469,7 +523,7 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
                 child: Text(
                   '可用模型',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: _ink,
+                        color: _textColor(context),
                         fontWeight: FontWeight.w600,
                       ),
                 ),
@@ -486,6 +540,8 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
                       value: model.enabled,
                       onChanged: (value) =>
                           widget.store.setModelEnabled(model.id, value),
+                      testing: testingModelId == model.id,
+                      onTest: () => _testModel(model),
                     ),
                   ),
                 ),
@@ -577,10 +633,9 @@ class _ApiSettingsPageState extends State<ApiSettingsPage> {
           ),
           SwitchListTile(
             value: stream,
-            activeThumbColor: _ink,
+            activeThumbColor: _textColor(context),
             contentPadding: EdgeInsets.zero,
             title: const Text('流式输出'),
-            subtitle: const Text('支持 SSE 的接口会逐字返回'),
             onChanged: (value) => setState(() => stream = value),
           ),
           _Field(
@@ -606,6 +661,8 @@ class SearchSettingsPage extends StatefulWidget {
 }
 
 class _SearchSettingsPageState extends State<SearchSettingsPage> {
+  String testingProviderId = '';
+
   Future<void> _setDefaultEnabled(bool value) async {
     final next = copySettings(widget.store.settings)
       ..searchEnabledByDefault = value;
@@ -616,6 +673,27 @@ class _SearchSettingsPageState extends State<SearchSettingsPage> {
     final next = copySettings(widget.store.settings)
       ..defaultSearchProviderId = id;
     await widget.store.updateSettings(next, widget.store.apiKey);
+  }
+
+  Future<void> _testProvider(SearchProviderConfig provider) async {
+    if (testingProviderId.isNotEmpty) {
+      return;
+    }
+    setState(() => testingProviderId = provider.id);
+    try {
+      final result = await widget.store.testSearchProvider(provider.id);
+      if (mounted) {
+        _snack(context, result);
+      }
+    } catch (err) {
+      if (mounted) {
+        _snack(context, err.toString());
+      }
+    } finally {
+      if (mounted) {
+        setState(() => testingProviderId = '');
+      }
+    }
   }
 
   @override
@@ -640,10 +718,9 @@ class _SearchSettingsPageState extends State<SearchSettingsPage> {
             children: [
               SwitchListTile(
                 value: widget.store.settings.searchEnabledByDefault,
-                activeThumbColor: _ink,
+                activeThumbColor: _textColor(context),
                 contentPadding: EdgeInsets.zero,
                 title: const Text('新会话默认开启搜索'),
-                subtitle: const Text('输入框加号菜单仍可按会话单独开关'),
                 onChanged: _setDefaultEnabled,
               ),
               const SizedBox(height: 10),
@@ -666,25 +743,59 @@ class _SearchSettingsPageState extends State<SearchSettingsPage> {
                           selected
                               ? Icons.check_circle_rounded
                               : Icons.travel_explore_rounded,
-                          color: selected ? _ink : _muted,
+                          color: selected
+                              ? _textColor(context)
+                              : _mutedColor(context),
                         ),
-                        title: Text(provider.name),
+                        title: Text(
+                          provider.name,
+                          style: TextStyle(color: _textColor(context)),
+                        ),
                         subtitle: Text(
                           _searchProviderState(widget.store, provider),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: _muted,
+                          style: TextStyle(
+                            color: _mutedColor(context),
                             fontSize: 12,
                             height: 1.2,
                           ),
                         ),
-                        trailing: IconButton(
-                          tooltip: '设为默认',
-                          icon: const Icon(Icons.radio_button_checked_rounded),
-                          onPressed: selected
-                              ? null
-                              : () => _setDefaultProvider(provider.id),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              tooltip: '测试',
+                              icon: testingProviderId == provider.id
+                                  ? SizedBox(
+                                      width: 17,
+                                      height: 17,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: _mutedColor(context),
+                                      ),
+                                    )
+                                  : Icon(
+                                      Icons.bolt_outlined,
+                                      color: _mutedColor(context),
+                                    ),
+                              onPressed: testingProviderId.isNotEmpty
+                                  ? null
+                                  : () => _testProvider(provider),
+                            ),
+                            IconButton(
+                              tooltip: '设为默认',
+                              icon: Icon(
+                                Icons.radio_button_checked_rounded,
+                                color: selected
+                                    ? _mutedColor(context)
+                                    : _textColor(context),
+                              ),
+                              onPressed: selected
+                                  ? null
+                                  : () => _setDefaultProvider(provider.id),
+                            ),
+                          ],
                         ),
                         onTap: () => Navigator.of(context).push(
                           MaterialPageRoute(
@@ -786,6 +897,7 @@ class _SearchProviderDetailPageState extends State<SearchProviderDetailPage> {
   late final TextEditingController headers;
   late final TextEditingController extraBody;
   late bool enabled;
+  bool testing = false;
 
   @override
   void initState() {
@@ -817,16 +929,16 @@ class _SearchProviderDetailPageState extends State<SearchProviderDetailPage> {
     super.dispose();
   }
 
-  Future<void> _save() async {
+  Future<bool> _persist({bool showSnack = true}) async {
     if (!_isJsonObject(headers.text) || !_isJsonObject(extraBody.text)) {
       _snack(context, '请求头和扩展请求体必须是 JSON 对象。');
-      return;
+      return false;
     }
     final normalizedKind =
         kind.text.trim().isEmpty ? 'custom' : kind.text.trim().toLowerCase();
     if (enabled && normalizedKind != 'custom' && apiKey.text.trim().isEmpty) {
       _snack(context, '请先填写 API Key。');
-      return;
+      return false;
     }
     provider
       ..name = name.text.trim()
@@ -842,9 +954,16 @@ class _SearchProviderDetailPageState extends State<SearchProviderDetailPage> {
       apiKey: apiKey.text.trim(),
     );
     if (!mounted) {
-      return;
+      return true;
     }
-    _snack(context, '已保存');
+    if (showSnack) {
+      _snack(context, '已保存');
+    }
+    return true;
+  }
+
+  Future<void> _save() async {
+    await _persist();
   }
 
   Future<void> _delete() async {
@@ -855,12 +974,48 @@ class _SearchProviderDetailPageState extends State<SearchProviderDetailPage> {
     Navigator.pop(context);
   }
 
+  Future<void> _test() async {
+    if (testing) {
+      return;
+    }
+    final saved = await _persist(showSnack: false);
+    if (!saved || !mounted) {
+      return;
+    }
+    setState(() => testing = true);
+    try {
+      final result = await widget.store.testSearchProvider(provider.id);
+      if (mounted) {
+        _snack(context, result);
+      }
+    } catch (err) {
+      if (mounted) {
+        _snack(context, err.toString());
+      }
+    } finally {
+      if (mounted) {
+        setState(() => testing = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return _EditScaffold(
       title: provider.name,
       onSave: _save,
       actions: [
+        IconButton(
+          tooltip: '测试',
+          icon: testing
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.bolt_outlined),
+          onPressed: testing ? null : _test,
+        ),
         IconButton(
           tooltip: '删除搜索服务',
           icon: const Icon(Icons.delete_outline_rounded),
@@ -871,7 +1026,7 @@ class _SearchProviderDetailPageState extends State<SearchProviderDetailPage> {
         children: [
           SwitchListTile(
             value: enabled,
-            activeThumbColor: _ink,
+            activeThumbColor: _textColor(context),
             contentPadding: EdgeInsets.zero,
             title: const Text('启用'),
             onChanged: (value) => setState(() => enabled = value),
@@ -977,13 +1132,21 @@ class McpSettingsPage extends StatelessWidget {
                         server.enabled
                             ? Icons.account_tree_rounded
                             : Icons.account_tree_outlined,
-                        color: server.enabled ? _ink : _muted,
+                        color: server.enabled
+                            ? _textColor(context)
+                            : _mutedColor(context),
                       ),
-                      title: Text(server.name),
-                      subtitle: Text('${server.transport} · ${server.url}'),
-                      trailing: const Icon(
+                      title: Text(
+                        server.name,
+                        style: TextStyle(color: _textColor(context)),
+                      ),
+                      subtitle: Text(
+                        '${server.transport} · ${server.url}',
+                        style: TextStyle(color: _mutedColor(context)),
+                      ),
+                      trailing: Icon(
                         Icons.chevron_right_rounded,
-                        color: _muted,
+                        color: _mutedColor(context),
                       ),
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(
@@ -1100,7 +1263,7 @@ class _McpServerDetailPageState extends State<McpServerDetailPage> {
         children: [
           SwitchListTile(
             value: enabled,
-            activeThumbColor: _ink,
+            activeThumbColor: _textColor(context),
             contentPadding: EdgeInsets.zero,
             title: const Text('启用'),
             onChanged: (value) => setState(() => enabled = value),
@@ -1577,15 +1740,23 @@ class AppearancePage extends StatefulWidget {
 
 class _AppearancePageState extends State<AppearancePage> {
   late bool haptics;
+  late String appearanceMode;
+  late int themeColorValue;
 
   @override
   void initState() {
     super.initState();
-    haptics = widget.store.settings.haptics;
+    final settings = widget.store.settings;
+    haptics = settings.haptics;
+    appearanceMode = settings.appearanceMode;
+    themeColorValue = settings.themeColorValue;
   }
 
   Future<void> _save() async {
-    final next = copySettings(widget.store.settings)..haptics = haptics;
+    final next = copySettings(widget.store.settings)
+      ..appearanceMode = appearanceMode
+      ..themeColorValue = themeColorValue
+      ..haptics = haptics;
     await widget.store.updateSettings(next, widget.store.apiKey);
     if (!mounted) {
       return;
@@ -1599,16 +1770,177 @@ class _AppearancePageState extends State<AppearancePage> {
       title: '外观',
       onSave: _save,
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          _SettingLabel('模式'),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _AppearancePill(
+                label: '浅色',
+                selected: appearanceMode == 'light',
+                onTap: () => setState(() => appearanceMode = 'light'),
+              ),
+              _AppearancePill(
+                label: '深色',
+                selected: appearanceMode == 'dark',
+                onTap: () => setState(() => appearanceMode = 'dark'),
+              ),
+              _AppearancePill(
+                label: 'OLED',
+                selected: appearanceMode == 'oled',
+                onTap: () => setState(() => appearanceMode = 'oled'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          _SettingLabel('气泡颜色'),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: _themeColorPresets
+                .map(
+                  (preset) => _ThemeColorChoice(
+                    label: preset.label,
+                    color: Color(preset.value),
+                    selected: themeColorValue == preset.value,
+                    onTap: () => setState(() => themeColorValue = preset.value),
+                  ),
+                )
+                .toList(),
+          ),
+          const SizedBox(height: 18),
           SwitchListTile(
             value: haptics,
-            activeThumbColor: _ink,
+            activeThumbColor: _textColor(context),
             contentPadding: EdgeInsets.zero,
             title: const Text('触感反馈'),
-            subtitle: const Text('发送、切换助手等操作使用轻触反馈'),
             onChanged: (value) => setState(() => haptics = value),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ThemeColorPreset {
+  const _ThemeColorPreset(this.label, this.value);
+
+  final String label;
+  final int value;
+}
+
+const _themeColorPresets = [
+  _ThemeColorPreset('石墨', 0xFFE9E9E9),
+  _ThemeColorPreset('云蓝', 0xFFDCEBFF),
+  _ThemeColorPreset('松绿', 0xFFDDF4E7),
+  _ThemeColorPreset('雾紫', 0xFFE9E2FF),
+  _ThemeColorPreset('玫瑰', 0xFFFFE1EA),
+  _ThemeColorPreset('琥珀', 0xFFFFEDC7),
+  _ThemeColorPreset('青瓷', 0xFFDDF7F4),
+  _ThemeColorPreset('雾灰', 0xFFE4E7EC),
+];
+
+class _AppearancePill extends StatelessWidget {
+  const _AppearancePill({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? _textColor(context) : _softColor(context),
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: selected ? _background(context) : _textColor(context),
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ThemeColorChoice extends StatelessWidget {
+  const _ThemeColorChoice({
+    required this.label,
+    required this.color,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final Color color;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        width: 76,
+        padding: const EdgeInsets.fromLTRB(8, 8, 8, 9),
+        decoration: BoxDecoration(
+          color: _surface(context),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: selected ? _textColor(context) : _lineColor(context),
+            width: selected ? 1.4 : 1,
+          ),
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: _shadowColor(context, 0.08),
+                    blurRadius: 18,
+                    spreadRadius: 1,
+                  ),
+                ]
+              : const [],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: color,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
+              ),
+            ),
+            const SizedBox(height: 7),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: _textColor(context),
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1665,10 +1997,9 @@ class _DataPageState extends State<DataPage> {
         children: [
           SwitchListTile(
             value: includeApiKey,
-            activeThumbColor: _ink,
+            activeThumbColor: _textColor(context),
             contentPadding: EdgeInsets.zero,
             title: const Text('导出时包含 API Key'),
-            subtitle: const Text('默认不导出密钥'),
             onChanged: (value) => setState(() => includeApiKey = value),
           ),
           const SizedBox(height: 10),
@@ -1694,11 +2025,11 @@ class _FloatingSearchField extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface(context),
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
+            color: _shadowColor(context, 0.08),
             blurRadius: 22,
             spreadRadius: 1,
           ),
@@ -1706,14 +2037,18 @@ class _FloatingSearchField extends StatelessWidget {
       ),
       child: TextField(
         onChanged: onChanged,
-        cursorColor: _ink,
+        cursorColor: _textColor(context),
         decoration: InputDecoration(
           hintText: hint,
-          hintStyle: const TextStyle(color: _muted, fontSize: 14),
-          prefixIcon: const Icon(Icons.search_rounded, color: _muted, size: 20),
+          hintStyle: TextStyle(color: _mutedColor(context), fontSize: 14),
+          prefixIcon: Icon(
+            Icons.search_rounded,
+            color: _mutedColor(context),
+            size: 20,
+          ),
           isDense: true,
           filled: true,
-          fillColor: Colors.white,
+          fillColor: _surface(context),
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           border: OutlineInputBorder(
@@ -1721,8 +2056,8 @@ class _FloatingSearchField extends StatelessWidget {
             borderSide: BorderSide.none,
           ),
         ),
-        style: const TextStyle(
-          color: _ink,
+        style: TextStyle(
+          color: _textColor(context),
           fontSize: 14.5,
           height: 1.25,
           letterSpacing: 0,
@@ -1748,9 +2083,11 @@ class _MenuChoice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: Icon(icon, color: _ink),
-      title: Text(label),
-      subtitle: subtitle.isEmpty ? null : Text(subtitle),
+      leading: Icon(icon, color: _textColor(context)),
+      title: Text(label, style: TextStyle(color: _textColor(context))),
+      subtitle: subtitle.isEmpty
+          ? null
+          : Text(subtitle, style: TextStyle(color: _mutedColor(context))),
       onTap: () => Navigator.pop(context, value),
     );
   }
@@ -1774,27 +2111,24 @@ Future<String?> _showChoiceMenu(
             width: MediaQuery.sizeOf(context).width * 0.78,
             constraints: const BoxConstraints(maxWidth: 380),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: _surface(context),
               borderRadius: BorderRadius.circular(24),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.14),
+                  color: _shadowColor(context, 0.14),
                   blurRadius: 34,
                   spreadRadius: 1,
                 ),
               ],
             ),
-            child: SafeArea(
-              minimum: const EdgeInsets.symmetric(vertical: 8),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.sizeOf(context).height * 0.72,
-                ),
-                child: ListView(
-                  shrinkWrap: true,
-                  padding: EdgeInsets.zero,
-                  children: children,
-                ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.72,
+              ),
+              child: ListView(
+                shrinkWrap: true,
+                padding: EdgeInsets.zero,
+                children: children,
               ),
             ),
           ),
@@ -1834,9 +2168,12 @@ class _EditScaffold extends StatelessWidget {
           ...actions,
           TextButton(
             onPressed: onSave,
-            child: const Text(
+            child: Text(
               '保存',
-              style: TextStyle(color: _ink, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                color: _textColor(context),
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
           const SizedBox(width: 6),
@@ -1859,8 +2196,8 @@ class _SettingsGroup extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: _line),
+        color: _surface(context),
+        border: Border.all(color: _lineColor(context)),
         borderRadius: BorderRadius.circular(18),
       ),
       child: Column(children: children),
@@ -1877,11 +2214,11 @@ class _SettingsCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface(context),
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
+            color: _shadowColor(context, 0.06),
             blurRadius: 18,
             spreadRadius: 1,
           ),
@@ -1897,37 +2234,81 @@ class _ModelMetadataTile extends StatelessWidget {
     required this.model,
     required this.value,
     required this.onChanged,
+    required this.testing,
+    required this.onTest,
   });
 
   final AiModelConfig model;
   final bool value;
   final ValueChanged<bool> onChanged;
+  final bool testing;
+  final VoidCallback onTest;
 
   @override
   Widget build(BuildContext context) {
     return _SettingsCard(
-      child: CheckboxListTile(
-        value: value,
-        fillColor: WidgetStateProperty.resolveWith(
-          (states) => states.contains(WidgetState.selected) ? _ink : null,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 9, 8, 9),
+        child: Row(
+          children: [
+            Checkbox(
+              value: value,
+              fillColor: WidgetStateProperty.resolveWith(
+                (states) => states.contains(WidgetState.selected)
+                    ? _textColor(context)
+                    : null,
+              ),
+              checkboxShape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(5),
+              ),
+              onChanged: (next) => onChanged(next ?? false),
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    model.displayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: _textColor(context)),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _modelMeta(model),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: _mutedColor(context),
+                      fontSize: 12.5,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              tooltip: '测试',
+              visualDensity: VisualDensity.compact,
+              onPressed: testing ? null : onTest,
+              icon: testing
+                  ? SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: _mutedColor(context),
+                      ),
+                    )
+                  : Icon(
+                      Icons.bolt_outlined,
+                      color: _mutedColor(context),
+                      size: 20,
+                    ),
+            ),
+          ],
         ),
-        checkboxShape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(5),
-        ),
-        contentPadding: const EdgeInsets.fromLTRB(14, 8, 10, 8),
-        title: Text(
-          model.displayName,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Text(
-            _modelMeta(model),
-            style: const TextStyle(color: _muted, fontSize: 12.5, height: 1.35),
-          ),
-        ),
-        onChanged: (next) => onChanged(next ?? false),
       ),
     );
   }
@@ -1973,13 +2354,13 @@ class _SettingsTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: Icon(icon, color: _ink),
+      leading: Icon(icon, color: _textColor(context)),
       title: Text(
         title,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          color: _ink,
+        style: TextStyle(
+          color: _textColor(context),
           fontSize: 15,
           fontWeight: FontWeight.w500,
           height: 1.2,
@@ -1989,13 +2370,13 @@ class _SettingsTile extends StatelessWidget {
         subtitle,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          color: _muted,
+        style: TextStyle(
+          color: _mutedColor(context),
           fontSize: 11.5,
           height: 1.2,
         ),
       ),
-      trailing: const Icon(Icons.chevron_right_rounded, color: _muted),
+      trailing: Icon(Icons.chevron_right_rounded, color: _mutedColor(context)),
       onTap: onTap,
     );
   }
@@ -2012,10 +2393,31 @@ class _EmptyLine extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(4, 18, 4, 10),
       child: Text(
         text,
-        style: const TextStyle(
-          color: _muted,
+        style: TextStyle(
+          color: _mutedColor(context),
           fontSize: 12.5,
           height: 1.3,
+        ),
+      ),
+    );
+  }
+}
+
+class _SettingLabel extends StatelessWidget {
+  const _SettingLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: _mutedColor(context),
+          fontSize: 12.5,
+          fontWeight: FontWeight.w500,
         ),
       ),
     );
@@ -2050,8 +2452,8 @@ class _Field extends StatelessWidget {
         children: [
           Text(
             label,
-            style: const TextStyle(
-              color: _muted,
+            style: TextStyle(
+              color: _mutedColor(context),
               fontSize: 12.5,
               fontWeight: FontWeight.w500,
             ),
@@ -2063,12 +2465,12 @@ class _Field extends StatelessWidget {
             obscureText: obscureText,
             minLines: minLines,
             maxLines: obscureText ? 1 : maxLines,
-            cursorColor: _ink,
+            cursorColor: _textColor(context),
             decoration: InputDecoration(
               hintText: hint,
-              hintStyle: const TextStyle(color: _muted, fontSize: 14),
+              hintStyle: TextStyle(color: _mutedColor(context), fontSize: 14),
               filled: true,
-              fillColor: _soft,
+              fillColor: _softColor(context),
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
               border: OutlineInputBorder(
@@ -2076,7 +2478,11 @@ class _Field extends StatelessWidget {
                 borderSide: BorderSide.none,
               ),
             ),
-            style: const TextStyle(color: _ink, fontSize: 15, height: 1.35),
+            style: TextStyle(
+              color: _textColor(context),
+              fontSize: 15,
+              height: 1.35,
+            ),
           ),
         ],
       ),
@@ -2108,8 +2514,8 @@ class _PromptField extends StatelessWidget {
         children: [
           Text(
             label,
-            style: const TextStyle(
-              color: _muted,
+            style: TextStyle(
+              color: _mutedColor(context),
               fontSize: 12.5,
               fontWeight: FontWeight.w500,
             ),
@@ -2121,12 +2527,15 @@ class _PromptField extends StatelessWidget {
                 controller: controller,
                 minLines: 8,
                 maxLines: 14,
-                cursorColor: _ink,
+                cursorColor: _textColor(context),
                 decoration: InputDecoration(
                   hintText: hint,
-                  hintStyle: const TextStyle(color: _muted, fontSize: 14),
+                  hintStyle: TextStyle(
+                    color: _mutedColor(context),
+                    fontSize: 14,
+                  ),
                   filled: true,
-                  fillColor: _soft,
+                  fillColor: _softColor(context),
                   contentPadding:
                       const EdgeInsets.fromLTRB(14, 13, 52, 52),
                   border: OutlineInputBorder(
@@ -2134,7 +2543,11 @@ class _PromptField extends StatelessWidget {
                     borderSide: BorderSide.none,
                   ),
                 ),
-                style: const TextStyle(color: _ink, fontSize: 15, height: 1.35),
+                style: TextStyle(
+                  color: _textColor(context),
+                  fontSize: 15,
+                  height: 1.35,
+                ),
               ),
               Positioned(
                 right: 10,
@@ -2155,20 +2568,20 @@ class _PromptField extends StatelessWidget {
                   child: IconButton(
                     tooltip: '润色提示词',
                     style: IconButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: _ink,
-                      disabledBackgroundColor: const Color(0xFFEAEAEA),
-                      disabledForegroundColor: _muted,
+                      backgroundColor: _surface(context),
+                      foregroundColor: _textColor(context),
+                      disabledBackgroundColor: _softColor(context),
+                      disabledForegroundColor: _mutedColor(context),
                       fixedSize: const Size(38, 38),
                     ),
                     onPressed: polishing ? null : onPolish,
                     icon: polishing
-                        ? const SizedBox(
+                        ? SizedBox(
                             width: 15,
                             height: 15,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              color: _ink,
+                              color: _textColor(context),
                             ),
                           )
                         : const Icon(Icons.auto_fix_high_rounded, size: 18),
@@ -2214,15 +2627,15 @@ class _ModelPickerTile extends StatelessWidget {
         children: [
           Text(
             label,
-            style: const TextStyle(
-              color: _muted,
+            style: TextStyle(
+              color: _mutedColor(context),
               fontSize: 12.5,
               fontWeight: FontWeight.w500,
             ),
           ),
           const SizedBox(height: 7),
           Material(
-            color: _soft,
+            color: _softColor(context),
             borderRadius: BorderRadius.circular(15),
             child: InkWell(
               borderRadius: BorderRadius.circular(15),
@@ -2239,15 +2652,18 @@ class _ModelPickerTile extends StatelessWidget {
                             title,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: _ink, fontSize: 15),
+                            style: TextStyle(
+                              color: _textColor(context),
+                              fontSize: 15,
+                            ),
                           ),
                           const SizedBox(height: 3),
                           Text(
                             subtitle,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: _muted,
+                            style: TextStyle(
+                              color: _mutedColor(context),
                               fontSize: 11.5,
                               height: 1.25,
                             ),
@@ -2255,7 +2671,10 @@ class _ModelPickerTile extends StatelessWidget {
                         ],
                       ),
                     ),
-                    const Icon(Icons.expand_more_rounded, color: _muted),
+                    Icon(
+                      Icons.expand_more_rounded,
+                      color: _mutedColor(context),
+                    ),
                   ],
                 ),
               ),
@@ -2274,20 +2693,21 @@ class _ModelPickerTile extends StatelessWidget {
         return Container(
           margin: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: _surface(context),
             borderRadius: BorderRadius.circular(24),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.12),
+                color: _shadowColor(context, 0.12),
                 blurRadius: 30,
                 spreadRadius: 1,
               ),
             ],
           ),
           child: SafeArea(
+            top: false,
             child: ListView(
               shrinkWrap: true,
-              padding: const EdgeInsets.symmetric(vertical: 10),
+              padding: const EdgeInsets.only(bottom: 10),
               children: [
                 if (allowEmpty)
                   ListTile(
@@ -2296,11 +2716,11 @@ class _ModelPickerTile extends StatelessWidget {
                     onTap: () => Navigator.pop(context, ''),
                   ),
                 if (models.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(18),
+                  Padding(
+                    padding: const EdgeInsets.all(18),
                     child: Text(
                       '暂无可选模型',
-                      style: TextStyle(color: _muted),
+                      style: TextStyle(color: _mutedColor(context)),
                     ),
                   ),
                 ...models.map(
@@ -2314,6 +2734,7 @@ class _ModelPickerTile extends StatelessWidget {
                       '${model.providerName} · ${_modelMeta(model)}',
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: _mutedColor(context)),
                     ),
                     trailing:
                         value == model.id ? const Icon(Icons.check_rounded) : null,
@@ -2354,7 +2775,7 @@ class _StaticNotice extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: _soft,
+        color: _softColor(context),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
@@ -2362,8 +2783,8 @@ class _StaticNotice extends StatelessWidget {
         children: [
           Text(
             title,
-            style: const TextStyle(
-              color: _ink,
+            style: TextStyle(
+              color: _textColor(context),
               fontSize: 15,
               fontWeight: FontWeight.w600,
             ),
@@ -2371,7 +2792,11 @@ class _StaticNotice extends StatelessWidget {
           const SizedBox(height: 5),
           Text(
             body,
-            style: const TextStyle(color: _muted, fontSize: 13.5, height: 1.4),
+            style: TextStyle(
+              color: _mutedColor(context),
+              fontSize: 13.5,
+              height: 1.4,
+            ),
           ),
         ],
       ),
@@ -2391,8 +2816,8 @@ class _ActionButton extends StatelessWidget {
       height: 48,
       child: FilledButton(
         style: FilledButton.styleFrom(
-          backgroundColor: _ink,
-          foregroundColor: Colors.white,
+          backgroundColor: _textColor(context),
+          foregroundColor: _background(context),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
