@@ -224,7 +224,7 @@ class _ImmersiveTopBar extends StatelessWidget {
               Color(0xB8FFFFFF),
               Color(0x00FFFFFF),
             ],
-            stops: [0, 0.46, 0.64, 0.82, 1],
+            stops: [0, 0.38, 0.56, 0.72, 0.88, 1],
           ),
         ),
         child: Padding(
