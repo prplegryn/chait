@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'ai_client.dart';
+import 'mcp_client.dart';
 import 'models.dart';
 import 'search_client.dart';
 
@@ -350,6 +351,13 @@ class AppStore extends ChangeNotifier {
     final provider = SearchProviderConfig.fromJson(
       searchProviderById(providerId).toJson(),
     )..enabled = true;
+    if (provider.baseUrl.trim().isEmpty) {
+      throw const SearchException('请先填写搜索服务地址。');
+    }
+    if (provider.kind.trim().toLowerCase() != 'custom' &&
+        apiKeyForSearchProvider(provider.id).trim().isEmpty) {
+      throw const SearchException('请先填写搜索服务密钥。');
+    }
     final results = await SearchClient().search(
       provider: provider,
       apiKey: apiKeyForSearchProvider(provider.id),
@@ -376,6 +384,14 @@ class AppStore extends ChangeNotifier {
     settings.mcpServers.removeWhere((server) => server.id == serverId);
     notifyListeners();
     await save();
+  }
+
+  Future<String> testMcpServer(String serverId) async {
+    final server = settings.mcpServers.firstWhere(
+      (item) => item.id == serverId,
+      orElse: () => throw const McpException('MCP 服务不存在。'),
+    );
+    return McpClient().test(server);
   }
 
   Future<String> testModel(String modelId) async {
@@ -596,9 +612,10 @@ class AppStore extends ChangeNotifier {
         assistantMessage.content = '已停止生成。';
       }
     } catch (error) {
-      assistantMessage.error = error.toString();
+      final message = friendlyError(error);
+      assistantMessage.error = message;
       if (assistantMessage.content.trim().isEmpty) {
-        assistantMessage.content = error.toString();
+        assistantMessage.content = message;
       }
     } finally {
       assistantMessage.isStreaming = false;
@@ -623,6 +640,57 @@ class AppStore extends ChangeNotifier {
     _cancelRequested = true;
     _activeClient?.cancel();
     notifyListeners();
+  }
+
+  String friendlyError(Object error) {
+    final raw = error.toString().replaceFirst(RegExp(r'^[A-Za-z]+Exception: '), '');
+    final text = raw.replaceAll(RegExp(r'\s+'), ' ').trim();
+    final lower = text.toLowerCase();
+    if (text.startsWith('请先') || text.startsWith('请选择')) {
+      return text;
+    }
+    if (lower.contains('api key') ||
+        lower.contains('apikey') ||
+        lower.contains('unauthorized') ||
+        lower.contains('forbidden') ||
+        lower.contains('401') ||
+        lower.contains('403') ||
+        lower.contains('密钥')) {
+      return '密钥无效或权限不足，请检查服务商配置。';
+    }
+    if (lower.contains('balance') ||
+        lower.contains('quota') ||
+        lower.contains('credit') ||
+        lower.contains('insufficient') ||
+        lower.contains('余额') ||
+        lower.contains('429')) {
+      return '余额不足或请求过于频繁，请稍后重试。';
+    }
+    if (lower.contains('timeout') ||
+        lower.contains('timed out') ||
+        lower.contains('socket') ||
+        lower.contains('connection') ||
+        lower.contains('tls') ||
+        lower.contains('network') ||
+        lower.contains('网络')) {
+      return '网络连接失败，请稍后重试。';
+    }
+    if (lower.contains('model') || lower.contains('模型')) {
+      return '模型不可用，请重新选择可用模型。';
+    }
+    if (lower.contains('base url') || lower.contains('地址')) {
+      return '服务地址不可用，请检查配置。';
+    }
+    if (lower.contains('search') || lower.contains('搜索')) {
+      return '搜索服务不可用，请检查配置。';
+    }
+    if (lower.contains('mcp')) {
+      return 'MCP 服务不可用，请检查地址和权限。';
+    }
+    if (text.isEmpty) {
+      return '请求失败，请稍后重试。';
+    }
+    return text.length > 80 ? '${text.substring(0, 80)}...' : text;
   }
 
   Future<void> regenerateLastAnswer() async {

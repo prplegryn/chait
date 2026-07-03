@@ -381,7 +381,7 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
     try {
       await widget.store.refreshProviderModels(provider.id);
     } catch (err) {
-      error = err.toString();
+      error = widget.store.friendlyError(err);
     } finally {
       if (mounted) {
         setState(() => loading = false);
@@ -415,7 +415,7 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
       }
     } catch (err) {
       if (mounted) {
-        _snack(context, err.toString());
+        _snack(context, widget.store.friendlyError(err));
       }
     } finally {
       if (mounted) {
@@ -687,7 +687,7 @@ class _SearchSettingsPageState extends State<SearchSettingsPage> {
       }
     } catch (err) {
       if (mounted) {
-        _snack(context, err.toString());
+        _snack(context, widget.store.friendlyError(err));
       }
     } finally {
       if (mounted) {
@@ -990,7 +990,7 @@ class _SearchProviderDetailPageState extends State<SearchProviderDetailPage> {
       }
     } catch (err) {
       if (mounted) {
-        _snack(context, err.toString());
+        _snack(context, widget.store.friendlyError(err));
       }
     } finally {
       if (mounted) {
@@ -1190,6 +1190,7 @@ class _McpServerDetailPageState extends State<McpServerDetailPage> {
   late final TextEditingController headers;
   late final TextEditingController notes;
   late bool enabled;
+  bool testing = false;
 
   @override
   void initState() {
@@ -1217,10 +1218,10 @@ class _McpServerDetailPageState extends State<McpServerDetailPage> {
     super.dispose();
   }
 
-  Future<void> _save() async {
+  Future<bool> _persist({bool showSnack = true}) async {
     if (!_isJsonObject(headers.text)) {
       _snack(context, '自定义请求头必须是 JSON 对象。');
-      return;
+      return false;
     }
     server
       ..name = name.text.trim().isEmpty ? 'MCP 服务' : name.text.trim()
@@ -1234,9 +1235,16 @@ class _McpServerDetailPageState extends State<McpServerDetailPage> {
       ..updatedAt = DateTime.now();
     await widget.store.updateMcpServer(server);
     if (!mounted) {
-      return;
+      return true;
     }
-    _snack(context, '已保存');
+    if (showSnack) {
+      _snack(context, '已保存');
+    }
+    return true;
+  }
+
+  Future<void> _save() async {
+    await _persist();
   }
 
   Future<void> _delete() async {
@@ -1247,12 +1255,48 @@ class _McpServerDetailPageState extends State<McpServerDetailPage> {
     Navigator.pop(context);
   }
 
+  Future<void> _test() async {
+    if (testing) {
+      return;
+    }
+    final saved = await _persist(showSnack: false);
+    if (!saved || !mounted) {
+      return;
+    }
+    setState(() => testing = true);
+    try {
+      final result = await widget.store.testMcpServer(server.id);
+      if (mounted) {
+        _snack(context, result);
+      }
+    } catch (err) {
+      if (mounted) {
+        _snack(context, widget.store.friendlyError(err));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => testing = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return _EditScaffold(
       title: server.name,
       onSave: _save,
       actions: [
+        IconButton(
+          tooltip: '测试',
+          icon: testing
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.bolt_outlined),
+          onPressed: testing ? null : _test,
+        ),
         IconButton(
           tooltip: '删除 MCP 服务',
           icon: const Icon(Icons.delete_outline_rounded),
@@ -1479,7 +1523,7 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
       preferredModelId = result['preferredModelId'] ?? preferredModelId;
     } catch (error) {
       if (mounted) {
-        _snack(context, error.toString());
+        _snack(context, widget.store.friendlyError(error));
       }
     } finally {
       if (mounted) {

@@ -46,16 +46,22 @@ class _ChatScreenState extends State<ChatScreen> {
   final _inputController = TextEditingController();
   final _scrollController = ScrollController();
   final _focusNode = FocusNode();
+  bool _stickToBottom = true;
+  bool _forceNextScroll = false;
+  String _lastSessionId = '';
 
   @override
   void initState() {
     super.initState();
     widget.store.addListener(_onStoreChanged);
+    _scrollController.addListener(_onScroll);
+    _lastSessionId = widget.store.currentSessionId;
   }
 
   @override
   void dispose() {
     widget.store.removeListener(_onStoreChanged);
+    _scrollController.removeListener(_onScroll);
     _inputController.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
@@ -66,12 +72,39 @@ class _ChatScreenState extends State<ChatScreen> {
     if (!mounted) {
       return;
     }
+    final sessionChanged = widget.store.currentSessionId != _lastSessionId;
+    if (sessionChanged) {
+      _lastSessionId = widget.store.currentSessionId;
+      _forceNextScroll = true;
+    }
+    final shouldScroll = _forceNextScroll || _stickToBottom;
     setState(() {});
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToEnd());
+    if (shouldScroll) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToEnd(jump: sessionChanged);
+        _forceNextScroll = false;
+      });
+    }
   }
 
-  void _scrollToEnd() {
+  void _onScroll() {
+    _stickToBottom = _isNearBottom();
+  }
+
+  bool _isNearBottom() {
     if (!_scrollController.hasClients) {
+      return true;
+    }
+    final position = _scrollController.position;
+    return position.maxScrollExtent - position.pixels < 90;
+  }
+
+  void _scrollToEnd({bool jump = false}) {
+    if (!_scrollController.hasClients) {
+      return;
+    }
+    if (jump) {
+      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
       return;
     }
     _scrollController.animateTo(
@@ -87,6 +120,8 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
     _inputController.clear();
+    _forceNextScroll = true;
+    _stickToBottom = true;
     _focusNode.requestFocus();
     await widget.store.sendMessage(text);
   }
