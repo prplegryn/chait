@@ -534,6 +534,7 @@ List<AiProviderConfig> defaultProviders() => [
         id: 'deepseek',
         name: 'DeepSeek',
         baseUrl: 'https://api.deepseek.com/v1',
+        balancePath: 'https://api.deepseek.com/user/balance',
       ),
       AiProviderConfig(
         id: 'volcengine',
@@ -559,6 +560,8 @@ List<AiProviderConfig> defaultProviders() => [
         id: 'moonshot',
         name: 'Moonshot',
         baseUrl: 'https://api.moonshot.cn/v1',
+        balancePath: '/users/me/balance',
+        balanceJsonPath: 'data.available_balance',
       ),
       AiProviderConfig(
         id: 'zhipu',
@@ -616,34 +619,53 @@ List<SearchProviderConfig> defaultSearchProviders() => [
         name: 'Tavily',
         kind: 'tavily',
         baseUrl: 'https://api.tavily.com',
+        enabled: false,
       ),
       SearchProviderConfig(
         id: 'exa',
         name: 'Exa',
         kind: 'exa',
         baseUrl: 'https://api.exa.ai',
+        enabled: false,
       ),
       SearchProviderConfig(
         id: 'brave',
         name: 'Brave Search',
         kind: 'brave',
         baseUrl: 'https://api.search.brave.com',
+        enabled: false,
       ),
       SearchProviderConfig(
         id: 'linkup',
         name: 'LinkUp',
         kind: 'linkup',
         baseUrl: 'https://api.linkup.so',
+        enabled: false,
       ),
       SearchProviderConfig(
         id: 'custom_search',
         name: '自定义搜索',
         kind: 'custom',
         baseUrl: '',
+        enabled: false,
       ),
     ];
 
 List<McpServerConfig> defaultMcpServers() => [];
+
+bool isBuiltInProviderId(String providerId) {
+  return defaultProviders()
+      .any((provider) => provider.id == providerId && !provider.isCustom);
+}
+
+AiProviderConfig? builtInProviderById(String providerId) {
+  final matches = defaultProviders()
+      .where((provider) => provider.id == providerId && !provider.isCustom);
+  if (matches.isEmpty) {
+    return null;
+  }
+  return AiProviderConfig.fromJson(matches.first.toJson());
+}
 
 String modelConfigId(String providerId, String modelName) {
   final normalized = modelName

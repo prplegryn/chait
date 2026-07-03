@@ -48,7 +48,7 @@ class SettingsScreen extends StatelessWidget {
                   ),
                   _SettingsTile(
                     title: '默认参数',
-                    subtitle: 'temperature、top_p、max tokens、扩展 JSON',
+                    subtitle: '模型与生成参数',
                     icon: Icons.tune_rounded,
                     onTap: () => _open(
                       context,
@@ -57,7 +57,7 @@ class SettingsScreen extends StatelessWidget {
                   ),
                   _SettingsTile(
                     title: '搜索服务',
-                    subtitle: '联网搜索、默认搜索源、会话开关',
+                    subtitle: '搜索源和密钥',
                     icon: Icons.travel_explore_rounded,
                     onTap: () => _open(
                       context,
@@ -66,7 +66,7 @@ class SettingsScreen extends StatelessWidget {
                   ),
                   _SettingsTile(
                     title: 'MCP 服务',
-                    subtitle: '远程 Streamable HTTP / SSE 服务',
+                    subtitle: '服务地址和权限',
                     icon: Icons.account_tree_outlined,
                     onTap: () => _open(
                       context,
@@ -80,7 +80,7 @@ class SettingsScreen extends StatelessWidget {
                 children: [
                   _SettingsTile(
                     title: '外观',
-                    subtitle: '白色调、触感反馈',
+                    subtitle: '触感反馈',
                     icon: Icons.contrast_rounded,
                     onTap: () => _open(
                       context,
@@ -149,20 +149,13 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
           body: ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
             children: [
-              const _StaticNotice(
-                title: '模型实时获取',
-                body: '这里不内置模型 ID。进入服务商后点击刷新，会从服务商 /models 接口读取当前可调用模型和元数据。',
-              ),
               _FloatingSearchField(
                 hint: '搜索服务商',
                 onChanged: (value) => setState(() => query = value),
               ),
               const SizedBox(height: 14),
               if (providers.isEmpty)
-                const _StaticNotice(
-                  title: '没有匹配服务商',
-                  body: '可以换个关键词，或右上角添加预设/自定义服务商。',
-                ),
+                const _EmptyLine('没有匹配服务商'),
               ...providers.map((provider) {
                 final enabledCount = widget.store.settings.models
                     .where(
@@ -297,8 +290,6 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
   late final TextEditingController name;
   late final TextEditingController baseUrl;
   late final TextEditingController modelsPath;
-  late final TextEditingController balancePath;
-  late final TextEditingController balanceJsonPath;
   late final TextEditingController apiKey;
   late final TextEditingController headers;
   bool loading = false;
@@ -314,8 +305,6 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
     name = TextEditingController(text: provider.name);
     baseUrl = TextEditingController(text: provider.baseUrl);
     modelsPath = TextEditingController(text: provider.modelsPath);
-    balancePath = TextEditingController(text: provider.balancePath);
-    balanceJsonPath = TextEditingController(text: provider.balanceJsonPath);
     apiKey = TextEditingController(
       text: widget.store.apiKeyForProvider(provider.id),
     );
@@ -327,8 +316,6 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
     name.dispose();
     baseUrl.dispose();
     modelsPath.dispose();
-    balancePath.dispose();
-    balanceJsonPath.dispose();
     apiKey.dispose();
     headers.dispose();
     super.dispose();
@@ -343,8 +330,6 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
       ..name = name.text.trim()
       ..baseUrl = baseUrl.text.trim()
       ..modelsPath = modelsPath.text.trim().isEmpty ? '/models' : modelsPath.text.trim()
-      ..balancePath = balancePath.text.trim()
-      ..balanceJsonPath = balanceJsonPath.text.trim()
       ..customHeadersJson = headers.text.trim().isEmpty ? '{}' : headers.text;
     await widget.store.updateProvider(provider, apiKey: apiKey.text.trim());
   }
@@ -367,8 +352,8 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
   }
 
   Future<void> _refreshBalance() async {
-    if (balancePath.text.trim().isEmpty) {
-      _snack(context, '请先填写余额接口路径。');
+    if (provider.balancePath.trim().isEmpty) {
+      _snack(context, '该服务商没有可用余额接口。');
       return;
     }
     await _save();
@@ -394,6 +379,14 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
     Navigator.pop(context);
   }
 
+  Future<void> _reset() async {
+    await widget.store.resetProvider(provider.id);
+    if (!mounted) {
+      return;
+    }
+    Navigator.pop(context);
+  }
+
   @override
   Widget build(BuildContext context) {
     final models = widget.store.settings.models
@@ -407,7 +400,13 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
           title: provider.name,
           onSave: _save,
           actions: [
-            if (widget.store.settings.providers.length > 1)
+            if (isBuiltInProviderId(provider.id))
+              IconButton(
+                tooltip: '重置服务商',
+                icon: const Icon(Icons.restart_alt_rounded),
+                onPressed: _reset,
+              )
+            else if (widget.store.settings.providers.length > 1)
               IconButton(
                 tooltip: '删除服务商',
                 icon: const Icon(Icons.delete_outline_rounded),
@@ -429,16 +428,6 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
                 controller: modelsPath,
               ),
               _Field(
-                label: '余额接口路径',
-                hint: '/credits，可留空',
-                controller: balancePath,
-              ),
-              _Field(
-                label: '余额 JSON 路径',
-                hint: 'data.balance，可留空自动识别',
-                controller: balanceJsonPath,
-              ),
-              _Field(
                 label: 'API Key',
                 hint: '服务商密钥',
                 controller: apiKey,
@@ -455,11 +444,13 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
                 label: loading ? '正在刷新…' : '从服务商刷新模型',
                 onPressed: loading ? () {} : _refresh,
               ),
-              const SizedBox(height: 10),
-              _ActionButton(
-                label: loadingBalance ? '正在获取余额…' : '获取余额',
-                onPressed: loadingBalance ? () {} : _refreshBalance,
-              ),
+              if (provider.balancePath.trim().isNotEmpty) ...[
+                const SizedBox(height: 10),
+                _ActionButton(
+                  label: loadingBalance ? '正在获取余额…' : '获取余额',
+                  onPressed: loadingBalance ? () {} : _refreshBalance,
+                ),
+              ],
               if (provider.balanceText.trim().isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 10),
@@ -485,10 +476,7 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
               ),
               const SizedBox(height: 8),
               if (models.isEmpty)
-                const _StaticNotice(
-                  title: '暂无模型',
-                  body: '点击刷新后会显示服务商当前返回的模型；勾选后才会进入聊天、标题生成和润色模型选择。',
-                )
+                const _EmptyLine('暂无模型')
               else
                 ...models.map(
                   (model) => Padding(
@@ -660,10 +648,7 @@ class _SearchSettingsPageState extends State<SearchSettingsPage> {
               ),
               const SizedBox(height: 10),
               if (providers.isEmpty)
-                const _StaticNotice(
-                  title: '没有搜索服务',
-                  body: '右上角添加 Tavily、Exa、Brave、LinkUp 或自定义搜索接口。',
-                ),
+                const _EmptyLine('暂无搜索服务'),
               ...providers.map(
                 (provider) {
                   final selected =
@@ -685,7 +670,14 @@ class _SearchSettingsPageState extends State<SearchSettingsPage> {
                         ),
                         title: Text(provider.name),
                         subtitle: Text(
-                          '${provider.kind} · ${provider.enabled ? '已启用' : '已停用'}',
+                          _searchProviderState(widget.store, provider),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: _muted,
+                            fontSize: 12,
+                            height: 1.2,
+                          ),
                         ),
                         trailing: IconButton(
                           tooltip: '设为默认',
@@ -830,9 +822,15 @@ class _SearchProviderDetailPageState extends State<SearchProviderDetailPage> {
       _snack(context, '请求头和扩展请求体必须是 JSON 对象。');
       return;
     }
+    final normalizedKind =
+        kind.text.trim().isEmpty ? 'custom' : kind.text.trim().toLowerCase();
+    if (enabled && normalizedKind != 'custom' && apiKey.text.trim().isEmpty) {
+      _snack(context, '请先填写 API Key。');
+      return;
+    }
     provider
       ..name = name.text.trim()
-      ..kind = kind.text.trim().isEmpty ? 'custom' : kind.text.trim()
+      ..kind = normalizedKind
       ..baseUrl = baseUrl.text.trim()
       ..enabled = enabled
       ..maxResults = _intOr(maxResults.text, 5).clamp(1, 10).toInt()
@@ -964,15 +962,8 @@ class McpSettingsPage extends StatelessWidget {
           body: ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
             children: [
-              const _StaticNotice(
-                title: '移动端 MCP',
-                body: '当前先支持远程 Streamable HTTP / SSE 配置；本地 stdio 服务不适合直接在安卓 App 内运行。',
-              ),
               if (store.settings.mcpServers.isEmpty)
-                const _StaticNotice(
-                  title: '没有 MCP 服务',
-                  body: '右上角添加远程 MCP 服务后，可在后续助手工具选择中启用。',
-                ),
+                const _EmptyLine('暂无 MCP 服务'),
               ...store.settings.mcpServers.map(
                 (server) => Padding(
                   padding: const EdgeInsets.only(bottom: 10),
@@ -1609,10 +1600,6 @@ class _AppearancePageState extends State<AppearancePage> {
       onSave: _save,
       child: Column(
         children: [
-          const _StaticNotice(
-            title: '白色调',
-            body: '界面保持白色和灰阶，不提供彩色主题。',
-          ),
           SwitchListTile(
             value: haptics,
             activeThumbColor: _ink,
@@ -1961,6 +1948,15 @@ String _modelMeta(AiModelConfig model) {
   return parts.join(' · ');
 }
 
+String _searchProviderState(AppStore store, SearchProviderConfig provider) {
+  final key = store.apiKeyForSearchProvider(provider.id).trim();
+  final kind = provider.kind.trim().toLowerCase();
+  if (kind != 'custom' && key.isEmpty) {
+    return '未配置';
+  }
+  return provider.enabled ? '已启用' : '已停用';
+}
+
 class _SettingsTile extends StatelessWidget {
   const _SettingsTile({
     required this.title,
@@ -1978,10 +1974,50 @@ class _SettingsTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       leading: Icon(icon, color: _ink),
-      title: Text(title),
-      subtitle: Text(subtitle),
+      title: Text(
+        title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: _ink,
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+          height: 1.2,
+        ),
+      ),
+      subtitle: Text(
+        subtitle,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: _muted,
+          fontSize: 11.5,
+          height: 1.2,
+        ),
+      ),
       trailing: const Icon(Icons.chevron_right_rounded, color: _muted),
       onTap: onTap,
+    );
+  }
+}
+
+class _EmptyLine extends StatelessWidget {
+  const _EmptyLine(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 18, 4, 10),
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: _muted,
+          fontSize: 12.5,
+          height: 1.3,
+        ),
+      ),
     );
   }
 }
@@ -2169,8 +2205,8 @@ class _ModelPickerTile extends StatelessWidget {
     final selected = models.where((model) => model.id == value);
     final title = selected.isEmpty ? emptyLabel : selected.first.displayName;
     final subtitle = selected.isEmpty
-        ? '先到服务商设定里刷新并勾选模型'
-        : '${selected.first.providerName} · ${_modelMeta(selected.first)}';
+        ? '未选择'
+        : _compactModelMeta(selected.first);
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: Column(
@@ -2208,12 +2244,12 @@ class _ModelPickerTile extends StatelessWidget {
                           const SizedBox(height: 3),
                           Text(
                             subtitle,
-                            maxLines: 2,
+                            maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               color: _muted,
-                              fontSize: 12,
-                              height: 1.3,
+                              fontSize: 11.5,
+                              height: 1.25,
                             ),
                           ),
                         ],
@@ -2263,7 +2299,7 @@ class _ModelPickerTile extends StatelessWidget {
                   const Padding(
                     padding: EdgeInsets.all(18),
                     child: Text(
-                      '还没有已添加模型。请先到服务商设定刷新并勾选模型。',
+                      '暂无可选模型',
                       style: TextStyle(color: _muted),
                     ),
                   ),
@@ -2294,6 +2330,15 @@ class _ModelPickerTile extends StatelessWidget {
       onChanged(result);
     }
   }
+}
+
+String _compactModelMeta(AiModelConfig model) {
+  return [
+    model.providerName,
+    if (model.contextWindow != null) '上下文 ${model.contextWindow}',
+    if (model.supportsTools == true) '工具',
+    if (model.supportsVision == true) '视觉',
+  ].join(' · ');
 }
 
 class _StaticNotice extends StatelessWidget {

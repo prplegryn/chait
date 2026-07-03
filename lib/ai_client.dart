@@ -608,6 +608,23 @@ class AiClient {
         return _formatNumber(openRouterCredit - openRouterUsage);
       }
       for (final candidate in [map, data]) {
+        final balanceInfos = candidate['balance_infos'];
+        if (balanceInfos is List && balanceInfos.isNotEmpty) {
+          final parts = <String>[];
+          for (final item in balanceInfos.whereType<Map>()) {
+            final info = Map<String, Object?>.from(item);
+            final amount = _balanceText(
+              info['total_balance'] ?? info['balance'] ?? info['amount'],
+            );
+            final currency = _contentToText(info['currency']).trim();
+            if (amount.isNotEmpty) {
+              parts.add(currency.isEmpty ? amount : '$amount $currency');
+            }
+          }
+          if (parts.isNotEmpty) {
+            return parts.join(' / ');
+          }
+        }
         for (final key in const [
           'balance',
           'total_balance',

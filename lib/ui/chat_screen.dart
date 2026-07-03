@@ -135,7 +135,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   child: session.messages.isEmpty
                       ? Padding(
                           padding: EdgeInsets.only(
-                            top: MediaQuery.paddingOf(context).top + 96,
+                            top: MediaQuery.paddingOf(context).top + 84,
                             bottom: 108,
                           ),
                           child: _EmptyChat(assistant: assistant),
@@ -146,7 +146,7 @@ class _ChatScreenState extends State<ChatScreen> {
                               ScrollViewKeyboardDismissBehavior.onDrag,
                           padding: EdgeInsets.fromLTRB(
                             18,
-                            MediaQuery.paddingOf(context).top + 122,
+                            MediaQuery.paddingOf(context).top + 108,
                             18,
                             118,
                           ),
@@ -205,13 +205,13 @@ class _ImmersiveTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final top = MediaQuery.paddingOf(context).top;
-    final contentTop = top > 6 ? top - 6 : top;
+    final contentTop = top > 14 ? top - 14 : top * 0.35;
     return Positioned(
       left: 0,
       right: 0,
       top: 0,
       child: Container(
-        height: top + 112,
+        height: top + 104,
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
@@ -230,7 +230,7 @@ class _ImmersiveTopBar extends StatelessWidget {
         child: Padding(
           padding: EdgeInsets.only(top: contentTop),
           child: SizedBox(
-            height: 54,
+            height: 50,
             child: Row(
               children: [
                 const SizedBox(width: 8),
@@ -844,17 +844,11 @@ class _ChaitDrawerState extends State<ChaitDrawer> {
         borderRadius: BorderRadius.horizontal(right: Radius.circular(22)),
       ),
       child: SafeArea(
-        child: Column(
+        child: Stack(
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-              child: _DrawerSearchField(
-                onChanged: (value) => setState(() => query = value),
-              ),
-            ),
-            Expanded(
+            Positioned.fill(
               child: ListView(
-                padding: const EdgeInsets.only(bottom: 34),
+                padding: const EdgeInsets.fromLTRB(0, 76, 0, 92),
                 children: [
                   if (pinned.isNotEmpty) ...[
                     _SectionLabel('置顶'),
@@ -874,8 +868,18 @@ class _ChaitDrawerState extends State<ChaitDrawer> {
                 ],
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+            Positioned(
+              left: 16,
+              right: 16,
+              top: 10,
+              child: _DrawerSearchField(
+                onChanged: (value) => setState(() => query = value),
+              ),
+            ),
+            Positioned(
+              left: 14,
+              right: 14,
+              bottom: 14,
               child: Row(
                 children: [
                   Expanded(
@@ -1343,7 +1347,7 @@ Future<void> showModelChoiceSheet({
                   const Padding(
                     padding: EdgeInsets.all(18),
                     child: Text(
-                      '还没有已添加模型。请先到设置的服务商设定里刷新并勾选模型。',
+                      '暂无可选模型',
                       style: TextStyle(color: _muted),
                     ),
                   ),

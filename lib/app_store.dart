@@ -153,10 +153,33 @@ class AppStore extends ChangeNotifier {
   }
 
   Future<void> deleteProvider(String providerId) async {
+    if (isBuiltInProviderId(providerId)) {
+      await resetProvider(providerId);
+      return;
+    }
     if (settings.providers.length <= 1) {
       return;
     }
     settings.providers.removeWhere((provider) => provider.id == providerId);
+    settings.models.removeWhere((model) => model.providerId == providerId);
+    providerApiKeys.remove(providerId);
+    _repairModelSelections();
+    notifyListeners();
+    await save();
+  }
+
+  Future<void> resetProvider(String providerId) async {
+    final preset = builtInProviderById(providerId);
+    if (preset == null) {
+      await deleteProvider(providerId);
+      return;
+    }
+    final index = settings.providers.indexWhere((item) => item.id == providerId);
+    if (index == -1) {
+      settings.providers.add(preset);
+    } else {
+      settings.providers[index] = preset;
+    }
     settings.models.removeWhere((model) => model.providerId == providerId);
     providerApiKeys.remove(providerId);
     _repairModelSelections();
@@ -272,7 +295,7 @@ class AppStore extends ChangeNotifier {
     if (apiKey != null) {
       searchProviderApiKeys[provider.id] = apiKey;
     }
-    if (settings.defaultSearchProviderId.isEmpty) {
+    if (provider.enabled && settings.defaultSearchProviderId.isEmpty) {
       settings.defaultSearchProviderId = provider.id;
     }
     _repairModelSelections();
@@ -539,16 +562,17 @@ class AppStore extends ChangeNotifier {
     String sessionId, {
     required String fallbackPrompt,
   }) async {
-    if (settings.titleModelId.isEmpty) {
-      return;
-    }
     final session = sessions.firstWhere(
       (item) => item.id == sessionId,
       orElse: () => currentSession,
     );
-    final target = _resolveSpecificModelTarget(settings.titleModelId);
+    if (settings.titleModelId.isEmpty) {
+      await _setFallbackTitle(session, fallbackPrompt);
+      return;
+    }
     final assistant = assistantForSession(session);
     try {
+      final target = _resolveSpecificModelTarget(settings.titleModelId);
       final title = await AiClient().generateText(
         settings: settings,
         apiKey: target.apiKey,
@@ -561,17 +585,16 @@ class AppStore extends ChangeNotifier {
         temperature: 0.2,
         maxTokens: 48,
       );
-      if (title.trim().isNotEmpty) {
-        session.title = title.trim().replaceAll('\n', ' ');
+      final cleaned = title.trim().replaceAll(RegExp(r'\s+'), ' ');
+      if (cleaned.isNotEmpty) {
+        session.title = cleaned;
         notifyListeners();
         await save();
+      } else {
+        await _setFallbackTitle(session, fallbackPrompt);
       }
     } catch (_) {
-      if (session.title == '新对话') {
-        session.title = _titleFromPrompt(fallbackPrompt);
-        notifyListeners();
-        await save();
-      }
+      await _setFallbackTitle(session, fallbackPrompt);
     }
   }
 
@@ -727,21 +750,76 @@ class AppStore extends ChangeNotifier {
       }
     }
     final searchIds = settings.searchProviders
-        .where((provider) => provider.enabled)
+        .where((provider) {
+          if (!provider.enabled) {
+            return false;
+          }
+          final kind = provider.kind.trim().toLowerCase();
+          if (kind == 'custom') {
+            return true;
+          }
+          return apiKeyForSearchProvider(provider.id).trim().isNotEmpty;
+        })
         .map((provider) => provider.id)
         .toSet();
+    for (final provider in settings.searchProviders) {
+      final kind = provider.kind.trim().toLowerCase();
+      if (kind != 'custom' &&
+          apiKeyForSearchProvider(provider.id).trim().isEmpty) {
+        provider.enabled = false;
+      }
+    }
     if (!searchIds.contains(settings.defaultSearchProviderId)) {
       settings.defaultSearchProviderId =
           searchIds.isEmpty ? '' : searchIds.first;
     }
   }
 
+  Future<void> _setFallbackTitle(
+    ChatSession session,
+    String fallbackPrompt,
+  ) async {
+    if (session.title != '新对话') {
+      return;
+    }
+    session.title = _titleFromPrompt(fallbackPrompt);
+    notifyListeners();
+    await save();
+  }
+
   void _ensureProviders() {
     if (settings.providers.isEmpty) {
       settings.providers.addAll(defaultProviders());
     }
+    for (final preset in defaultProviders()) {
+      final index =
+          settings.providers.indexWhere((provider) => provider.id == preset.id);
+      if (index == -1) {
+        settings.providers.add(AiProviderConfig.fromJson(preset.toJson()));
+        continue;
+      }
+      final provider = settings.providers[index];
+      if (isBuiltInProviderId(provider.id)) {
+        if (provider.modelsPath.trim().isEmpty) {
+          provider.modelsPath = preset.modelsPath;
+        }
+        if (provider.balancePath.trim().isEmpty) {
+          provider.balancePath = preset.balancePath;
+        }
+        if (provider.balanceJsonPath.trim().isEmpty) {
+          provider.balanceJsonPath = preset.balanceJsonPath;
+        }
+      }
+    }
     if (settings.searchProviders.isEmpty) {
       settings.searchProviders.addAll(defaultSearchProviders());
+    }
+    for (final preset in defaultSearchProviders()) {
+      if (!settings.searchProviders.any((provider) => provider.id == preset.id)) {
+        settings.searchProviders.add(
+          SearchProviderConfig.fromJson(preset.toJson()),
+        );
+      }
     }
     if (settings.mcpServers.isEmpty) {
       settings.mcpServers.addAll(defaultMcpServers());
