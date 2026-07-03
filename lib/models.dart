@@ -62,6 +62,10 @@ class AiProviderConfig {
     this.isCustom = false,
     this.customHeadersJson = '{}',
     this.modelsPath = '/models',
+    this.balancePath = '',
+    this.balanceJsonPath = '',
+    this.balanceText = '',
+    this.balanceUpdatedAt,
     this.updatedAt,
   });
 
@@ -71,6 +75,10 @@ class AiProviderConfig {
   bool isCustom;
   String customHeadersJson;
   String modelsPath;
+  String balancePath;
+  String balanceJsonPath;
+  String balanceText;
+  DateTime? balanceUpdatedAt;
   DateTime? updatedAt;
 
   Map<String, Object?> toJson() => {
@@ -80,6 +88,10 @@ class AiProviderConfig {
         'isCustom': isCustom,
         'customHeadersJson': customHeadersJson,
         'modelsPath': modelsPath,
+        'balancePath': balancePath,
+        'balanceJsonPath': balanceJsonPath,
+        'balanceText': balanceText,
+        'balanceUpdatedAt': balanceUpdatedAt?.toIso8601String(),
         'updatedAt': updatedAt?.toIso8601String(),
       };
 
@@ -91,6 +103,11 @@ class AiProviderConfig {
       isCustom: json['isCustom'] as bool? ?? false,
       customHeadersJson: json['customHeadersJson'] as String? ?? '{}',
       modelsPath: json['modelsPath'] as String? ?? '/models',
+      balancePath: json['balancePath'] as String? ?? '',
+      balanceJsonPath: json['balanceJsonPath'] as String? ?? '',
+      balanceText: json['balanceText'] as String? ?? '',
+      balanceUpdatedAt:
+          DateTime.tryParse(json['balanceUpdatedAt'] as String? ?? ''),
       updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? ''),
     );
   }
@@ -244,6 +261,7 @@ class ChatSession {
     required this.updatedAt,
     required this.messages,
     this.modelId = '',
+    this.searchEnabled = false,
     this.pinned = false,
   });
 
@@ -254,6 +272,7 @@ class ChatSession {
   DateTime updatedAt;
   final List<ChatMessage> messages;
   String modelId;
+  bool searchEnabled;
   bool pinned;
 
   bool get isEmpty => messages.isEmpty;
@@ -266,6 +285,7 @@ class ChatSession {
         'updatedAt': updatedAt.toIso8601String(),
         'messages': messages.map((message) => message.toJson()).toList(),
         'modelId': modelId,
+        'searchEnabled': searchEnabled,
         'pinned': pinned,
       };
 
@@ -290,7 +310,104 @@ class ChatSession {
           DateTime.now(),
       messages: messages,
       modelId: json['modelId'] as String? ?? '',
+      searchEnabled: json['searchEnabled'] as bool? ?? false,
       pinned: json['pinned'] as bool? ?? false,
+    );
+  }
+}
+
+class SearchProviderConfig {
+  SearchProviderConfig({
+    required this.id,
+    required this.name,
+    required this.kind,
+    required this.baseUrl,
+    this.enabled = true,
+    this.customHeadersJson = '{}',
+    this.extraBodyJson = '{}',
+    this.maxResults = 5,
+    this.updatedAt,
+  });
+
+  final String id;
+  String name;
+  String kind;
+  String baseUrl;
+  bool enabled;
+  String customHeadersJson;
+  String extraBodyJson;
+  int maxResults;
+  DateTime? updatedAt;
+
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'name': name,
+        'kind': kind,
+        'baseUrl': baseUrl,
+        'enabled': enabled,
+        'customHeadersJson': customHeadersJson,
+        'extraBodyJson': extraBodyJson,
+        'maxResults': maxResults,
+        'updatedAt': updatedAt?.toIso8601String(),
+      };
+
+  factory SearchProviderConfig.fromJson(Map<String, Object?> json) {
+    return SearchProviderConfig(
+      id: json['id'] as String? ?? newEntityId(),
+      name: json['name'] as String? ?? '搜索服务',
+      kind: json['kind'] as String? ?? 'custom',
+      baseUrl: json['baseUrl'] as String? ?? '',
+      enabled: json['enabled'] as bool? ?? true,
+      customHeadersJson: json['customHeadersJson'] as String? ?? '{}',
+      extraBodyJson: json['extraBodyJson'] as String? ?? '{}',
+      maxResults: _toInt(json['maxResults']) ?? 5,
+      updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? ''),
+    );
+  }
+}
+
+class McpServerConfig {
+  McpServerConfig({
+    required this.id,
+    required this.name,
+    required this.url,
+    this.transport = 'streamable_http',
+    this.enabled = true,
+    this.customHeadersJson = '{}',
+    this.notes = '',
+    this.updatedAt,
+  });
+
+  final String id;
+  String name;
+  String url;
+  String transport;
+  bool enabled;
+  String customHeadersJson;
+  String notes;
+  DateTime? updatedAt;
+
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'name': name,
+        'url': url,
+        'transport': transport,
+        'enabled': enabled,
+        'customHeadersJson': customHeadersJson,
+        'notes': notes,
+        'updatedAt': updatedAt?.toIso8601String(),
+      };
+
+  factory McpServerConfig.fromJson(Map<String, Object?> json) {
+    return McpServerConfig(
+      id: json['id'] as String? ?? newEntityId(),
+      name: json['name'] as String? ?? 'MCP 服务',
+      url: json['url'] as String? ?? '',
+      transport: json['transport'] as String? ?? 'streamable_http',
+      enabled: json['enabled'] as bool? ?? true,
+      customHeadersJson: json['customHeadersJson'] as String? ?? '{}',
+      notes: json['notes'] as String? ?? '',
+      updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? ''),
     );
   }
 }
@@ -301,9 +418,13 @@ class AppSettings {
     this.model = '',
     List<AiProviderConfig>? providers,
     List<AiModelConfig>? models,
+    List<SearchProviderConfig>? searchProviders,
+    List<McpServerConfig>? mcpServers,
     this.defaultModelId = '',
     this.titleModelId = '',
     this.polishModelId = '',
+    this.defaultSearchProviderId = '',
+    this.searchEnabledByDefault = false,
     this.stream = true,
     this.temperature = 0.7,
     this.topP = 1,
@@ -317,15 +438,21 @@ class AppSettings {
     this.extraBodyJson = '{}',
     this.haptics = true,
   })  : providers = providers ?? [],
-        models = models ?? [];
+        models = models ?? [],
+        searchProviders = searchProviders ?? [],
+        mcpServers = mcpServers ?? [];
 
   String baseUrl;
   String model;
   final List<AiProviderConfig> providers;
   final List<AiModelConfig> models;
+  final List<SearchProviderConfig> searchProviders;
+  final List<McpServerConfig> mcpServers;
   String defaultModelId;
   String titleModelId;
   String polishModelId;
+  String defaultSearchProviderId;
+  bool searchEnabledByDefault;
   bool stream;
   double temperature;
   double topP;
@@ -344,9 +471,14 @@ class AppSettings {
         'model': model,
         'providers': providers.map((provider) => provider.toJson()).toList(),
         'models': models.map((model) => model.toJson()).toList(),
+        'searchProviders':
+            searchProviders.map((provider) => provider.toJson()).toList(),
+        'mcpServers': mcpServers.map((server) => server.toJson()).toList(),
         'defaultModelId': defaultModelId,
         'titleModelId': titleModelId,
         'polishModelId': polishModelId,
+        'defaultSearchProviderId': defaultSearchProviderId,
+        'searchEnabledByDefault': searchEnabledByDefault,
         'stream': stream,
         'temperature': temperature,
         'topP': topP,
@@ -367,9 +499,15 @@ class AppSettings {
       model: json['model'] as String? ?? '',
       providers: _providerList(json['providers']),
       models: _modelList(json['models']),
+      searchProviders: _searchProviderList(json['searchProviders']),
+      mcpServers: _mcpServerList(json['mcpServers']),
       defaultModelId: json['defaultModelId'] as String? ?? '',
       titleModelId: json['titleModelId'] as String? ?? '',
       polishModelId: json['polishModelId'] as String? ?? '',
+      defaultSearchProviderId:
+          json['defaultSearchProviderId'] as String? ?? '',
+      searchEnabledByDefault:
+          json['searchEnabledByDefault'] as bool? ?? false,
       stream: json['stream'] as bool? ?? true,
       temperature: _toDouble(json['temperature']) ?? 0.7,
       topP: _toDouble(json['topP']) ?? 1,
@@ -398,9 +536,24 @@ List<AiProviderConfig> defaultProviders() => [
         baseUrl: 'https://api.deepseek.com/v1',
       ),
       AiProviderConfig(
+        id: 'volcengine',
+        name: '火山方舟',
+        baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+      ),
+      AiProviderConfig(
         id: 'qwen',
         name: '通义千问',
         baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+      ),
+      AiProviderConfig(
+        id: 'baidu_qianfan',
+        name: '百度千帆',
+        baseUrl: 'https://qianfan.baidubce.com/v2',
+      ),
+      AiProviderConfig(
+        id: 'tencent_hunyuan',
+        name: '腾讯混元',
+        baseUrl: 'https://api.hunyuan.cloud.tencent.com/v1',
       ),
       AiProviderConfig(
         id: 'moonshot',
@@ -416,11 +569,38 @@ List<AiProviderConfig> defaultProviders() => [
         id: 'openrouter',
         name: 'OpenRouter',
         baseUrl: 'https://openrouter.ai/api/v1',
+        balancePath: '/credits',
       ),
       AiProviderConfig(
         id: 'siliconflow',
         name: '硅基流动',
         baseUrl: 'https://api.siliconflow.cn/v1',
+        balancePath: '/user/info',
+      ),
+      AiProviderConfig(
+        id: 'together',
+        name: 'Together AI',
+        baseUrl: 'https://api.together.xyz/v1',
+      ),
+      AiProviderConfig(
+        id: 'groq',
+        name: 'Groq',
+        baseUrl: 'https://api.groq.com/openai/v1',
+      ),
+      AiProviderConfig(
+        id: 'mistral',
+        name: 'Mistral',
+        baseUrl: 'https://api.mistral.ai/v1',
+      ),
+      AiProviderConfig(
+        id: 'perplexity',
+        name: 'Perplexity',
+        baseUrl: 'https://api.perplexity.ai',
+      ),
+      AiProviderConfig(
+        id: 'ollama',
+        name: 'Ollama',
+        baseUrl: 'http://127.0.0.1:11434/v1',
       ),
       AiProviderConfig(
         id: 'custom',
@@ -429,6 +609,41 @@ List<AiProviderConfig> defaultProviders() => [
         isCustom: true,
       ),
     ];
+
+List<SearchProviderConfig> defaultSearchProviders() => [
+      SearchProviderConfig(
+        id: 'tavily',
+        name: 'Tavily',
+        kind: 'tavily',
+        baseUrl: 'https://api.tavily.com',
+      ),
+      SearchProviderConfig(
+        id: 'exa',
+        name: 'Exa',
+        kind: 'exa',
+        baseUrl: 'https://api.exa.ai',
+      ),
+      SearchProviderConfig(
+        id: 'brave',
+        name: 'Brave Search',
+        kind: 'brave',
+        baseUrl: 'https://api.search.brave.com',
+      ),
+      SearchProviderConfig(
+        id: 'linkup',
+        name: 'LinkUp',
+        kind: 'linkup',
+        baseUrl: 'https://api.linkup.so',
+      ),
+      SearchProviderConfig(
+        id: 'custom_search',
+        name: '自定义搜索',
+        kind: 'custom',
+        baseUrl: '',
+      ),
+    ];
+
+List<McpServerConfig> defaultMcpServers() => [];
 
 String modelConfigId(String providerId, String modelName) {
   final normalized = modelName
@@ -516,5 +731,26 @@ List<AiModelConfig> _modelList(Object? value) {
   return value
       .whereType<Map>()
       .map((item) => AiModelConfig.fromJson(Map<String, Object?>.from(item)))
+      .toList();
+}
+
+List<SearchProviderConfig> _searchProviderList(Object? value) {
+  if (value is! List) {
+    return [];
+  }
+  return value
+      .whereType<Map>()
+      .map((item) =>
+          SearchProviderConfig.fromJson(Map<String, Object?>.from(item)))
+      .toList();
+}
+
+List<McpServerConfig> _mcpServerList(Object? value) {
+  if (value is! List) {
+    return [];
+  }
+  return value
+      .whereType<Map>()
+      .map((item) => McpServerConfig.fromJson(Map<String, Object?>.from(item)))
       .toList();
 }

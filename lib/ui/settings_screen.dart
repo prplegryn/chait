@@ -55,6 +55,24 @@ class SettingsScreen extends StatelessWidget {
                       DefaultParamsPage(store: store),
                     ),
                   ),
+                  _SettingsTile(
+                    title: '搜索服务',
+                    subtitle: '联网搜索、默认搜索源、会话开关',
+                    icon: Icons.travel_explore_rounded,
+                    onTap: () => _open(
+                      context,
+                      SearchSettingsPage(store: store),
+                    ),
+                  ),
+                  _SettingsTile(
+                    title: 'MCP 服务',
+                    subtitle: '远程 Streamable HTTP / SSE 服务',
+                    icon: Icons.account_tree_outlined,
+                    onTap: () => _open(
+                      context,
+                      McpSettingsPage(store: store),
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 18),
@@ -92,18 +110,42 @@ class SettingsScreen extends StatelessWidget {
   }
 }
 
-class ProviderSettingsPage extends StatelessWidget {
+class ProviderSettingsPage extends StatefulWidget {
   const ProviderSettingsPage({super.key, required this.store});
 
   final AppStore store;
 
   @override
+  State<ProviderSettingsPage> createState() => _ProviderSettingsPageState();
+}
+
+class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
+  String query = '';
+
+  @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: store,
+      animation: widget.store,
       builder: (context, _) {
+        final providers = widget.store.settings.providers.where((provider) {
+          final normalized = query.trim().toLowerCase();
+          if (normalized.isEmpty) {
+            return true;
+          }
+          return provider.name.toLowerCase().contains(normalized) ||
+              provider.baseUrl.toLowerCase().contains(normalized);
+        }).toList();
         return Scaffold(
-          appBar: AppBar(title: const Text('服务商设定')),
+          appBar: AppBar(
+            title: const Text('服务商设定'),
+            actions: [
+              IconButton(
+                tooltip: '添加服务商',
+                icon: const Icon(Icons.add_rounded),
+                onPressed: _showAddProvider,
+              ),
+            ],
+          ),
           body: ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
             children: [
@@ -111,8 +153,18 @@ class ProviderSettingsPage extends StatelessWidget {
                 title: '模型实时获取',
                 body: '这里不内置模型 ID。进入服务商后点击刷新，会从服务商 /models 接口读取当前可调用模型和元数据。',
               ),
-              ...store.settings.providers.map((provider) {
-                final enabledCount = store.settings.models
+              _FloatingSearchField(
+                hint: '搜索服务商',
+                onChanged: (value) => setState(() => query = value),
+              ),
+              const SizedBox(height: 14),
+              if (providers.isEmpty)
+                const _StaticNotice(
+                  title: '没有匹配服务商',
+                  body: '可以换个关键词，或右上角添加预设/自定义服务商。',
+                ),
+              ...providers.map((provider) {
+                final enabledCount = widget.store.settings.models
                     .where(
                       (model) => model.providerId == provider.id && model.enabled,
                     )
@@ -126,10 +178,30 @@ class ProviderSettingsPage extends StatelessWidget {
                         vertical: 6,
                       ),
                       title: Text(provider.name),
-                      subtitle: Text(
-                        enabledCount == 0
-                            ? '未添加模型'
-                            : '已添加 $enabledCount 个模型',
+                      subtitle: Padding(
+                        padding: const EdgeInsets.only(top: 3),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              enabledCount == 0
+                                  ? '未添加模型'
+                                  : '已添加 $enabledCount 个模型',
+                            ),
+                            if (provider.balanceText.trim().isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text(
+                                  '余额 ${provider.balanceText}',
+                                  style: const TextStyle(
+                                    color: _muted,
+                                    fontSize: 12,
+                                    height: 1.2,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                       trailing: const Icon(
                         Icons.chevron_right_rounded,
@@ -138,7 +210,7 @@ class ProviderSettingsPage extends StatelessWidget {
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => ProviderDetailPage(
-                            store: store,
+                            store: widget.store,
                             providerId: provider.id,
                           ),
                         ),
@@ -151,6 +223,57 @@ class ProviderSettingsPage extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+
+  Future<void> _showAddProvider() async {
+    final existing = widget.store.settings.providers.map((item) => item.id).toSet();
+    final presets = defaultProviders()
+        .where((provider) => !existing.contains(provider.id))
+        .toList();
+    final actions = [
+      ...presets.map(
+        (provider) => _MenuChoice(
+          icon: Icons.cloud_outlined,
+          label: provider.name,
+          subtitle: provider.baseUrl,
+          value: provider.id,
+        ),
+      ),
+      const _MenuChoice(
+        icon: Icons.add_circle_outline_rounded,
+        label: '自定义服务商',
+        subtitle: '填写 OpenAI 兼容接口',
+        value: '__custom__',
+      ),
+    ];
+    final selected = await _showChoiceMenu(context, children: actions);
+    if (!mounted || selected == null) {
+      return;
+    }
+    final provider = selected == '__custom__'
+        ? AiProviderConfig(
+            id: newEntityId(),
+            name: '自定义服务商',
+            baseUrl: '',
+            isCustom: true,
+          )
+        : AiProviderConfig.fromJson(
+            defaultProviders()
+                .firstWhere((item) => item.id == selected)
+                .toJson(),
+          );
+    await widget.store.updateProvider(provider);
+    if (!mounted) {
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ProviderDetailPage(
+          store: widget.store,
+          providerId: provider.id,
+        ),
+      ),
     );
   }
 }
@@ -174,9 +297,12 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
   late final TextEditingController name;
   late final TextEditingController baseUrl;
   late final TextEditingController modelsPath;
+  late final TextEditingController balancePath;
+  late final TextEditingController balanceJsonPath;
   late final TextEditingController apiKey;
   late final TextEditingController headers;
   bool loading = false;
+  bool loadingBalance = false;
   String error = '';
 
   @override
@@ -188,6 +314,8 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
     name = TextEditingController(text: provider.name);
     baseUrl = TextEditingController(text: provider.baseUrl);
     modelsPath = TextEditingController(text: provider.modelsPath);
+    balancePath = TextEditingController(text: provider.balancePath);
+    balanceJsonPath = TextEditingController(text: provider.balanceJsonPath);
     apiKey = TextEditingController(
       text: widget.store.apiKeyForProvider(provider.id),
     );
@@ -199,6 +327,8 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
     name.dispose();
     baseUrl.dispose();
     modelsPath.dispose();
+    balancePath.dispose();
+    balanceJsonPath.dispose();
     apiKey.dispose();
     headers.dispose();
     super.dispose();
@@ -213,6 +343,8 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
       ..name = name.text.trim()
       ..baseUrl = baseUrl.text.trim()
       ..modelsPath = modelsPath.text.trim().isEmpty ? '/models' : modelsPath.text.trim()
+      ..balancePath = balancePath.text.trim()
+      ..balanceJsonPath = balanceJsonPath.text.trim()
       ..customHeadersJson = headers.text.trim().isEmpty ? '{}' : headers.text;
     await widget.store.updateProvider(provider, apiKey: apiKey.text.trim());
   }
@@ -234,6 +366,34 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
     }
   }
 
+  Future<void> _refreshBalance() async {
+    if (balancePath.text.trim().isEmpty) {
+      _snack(context, '请先填写余额接口路径。');
+      return;
+    }
+    await _save();
+    setState(() => loadingBalance = true);
+    try {
+      final balance = await widget.store.refreshProviderBalance(provider.id);
+      if (!mounted) {
+        return;
+      }
+      _snack(context, balance.isEmpty ? '该接口没有返回可识别余额。' : '余额已更新');
+    } finally {
+      if (mounted) {
+        setState(() => loadingBalance = false);
+      }
+    }
+  }
+
+  Future<void> _delete() async {
+    await widget.store.deleteProvider(provider.id);
+    if (!mounted) {
+      return;
+    }
+    Navigator.pop(context);
+  }
+
   @override
   Widget build(BuildContext context) {
     final models = widget.store.settings.models
@@ -246,6 +406,14 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
         return _EditScaffold(
           title: provider.name,
           onSave: _save,
+          actions: [
+            if (widget.store.settings.providers.length > 1)
+              IconButton(
+                tooltip: '删除服务商',
+                icon: const Icon(Icons.delete_outline_rounded),
+                onPressed: _delete,
+              ),
+          ],
           child: Column(
             children: [
               _Field(label: '名称', hint: 'OpenAI', controller: name),
@@ -259,6 +427,16 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
                 label: '模型列表路径',
                 hint: '/models',
                 controller: modelsPath,
+              ),
+              _Field(
+                label: '余额接口路径',
+                hint: '/credits，可留空',
+                controller: balancePath,
+              ),
+              _Field(
+                label: '余额 JSON 路径',
+                hint: 'data.balance，可留空自动识别',
+                controller: balanceJsonPath,
               ),
               _Field(
                 label: 'API Key',
@@ -277,6 +455,19 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
                 label: loading ? '正在刷新…' : '从服务商刷新模型',
                 onPressed: loading ? () {} : _refresh,
               ),
+              const SizedBox(height: 10),
+              _ActionButton(
+                label: loadingBalance ? '正在获取余额…' : '获取余额',
+                onPressed: loadingBalance ? () {} : _refreshBalance,
+              ),
+              if (provider.balanceText.trim().isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: _StaticNotice(
+                    title: '当前余额',
+                    body: provider.balanceText,
+                  ),
+                ),
               if (error.isNotEmpty) ...[
                 const SizedBox(height: 10),
                 _StaticNotice(title: '刷新失败', body: error),
@@ -410,6 +601,544 @@ class _ApiSettingsPageState extends State<ApiSettingsPage> {
             controller: headers,
             minLines: 4,
             maxLines: 8,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class SearchSettingsPage extends StatefulWidget {
+  const SearchSettingsPage({super.key, required this.store});
+
+  final AppStore store;
+
+  @override
+  State<SearchSettingsPage> createState() => _SearchSettingsPageState();
+}
+
+class _SearchSettingsPageState extends State<SearchSettingsPage> {
+  Future<void> _setDefaultEnabled(bool value) async {
+    final next = copySettings(widget.store.settings)
+      ..searchEnabledByDefault = value;
+    await widget.store.updateSettings(next, widget.store.apiKey);
+  }
+
+  Future<void> _setDefaultProvider(String id) async {
+    final next = copySettings(widget.store.settings)
+      ..defaultSearchProviderId = id;
+    await widget.store.updateSettings(next, widget.store.apiKey);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: widget.store,
+      builder: (context, _) {
+        final providers = widget.store.settings.searchProviders;
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('搜索服务'),
+            actions: [
+              IconButton(
+                tooltip: '添加搜索服务',
+                icon: const Icon(Icons.add_rounded),
+                onPressed: _showAddSearchProvider,
+              ),
+            ],
+          ),
+          body: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+            children: [
+              SwitchListTile(
+                value: widget.store.settings.searchEnabledByDefault,
+                activeThumbColor: _ink,
+                contentPadding: EdgeInsets.zero,
+                title: const Text('新会话默认开启搜索'),
+                subtitle: const Text('输入框加号菜单仍可按会话单独开关'),
+                onChanged: _setDefaultEnabled,
+              ),
+              const SizedBox(height: 10),
+              if (providers.isEmpty)
+                const _StaticNotice(
+                  title: '没有搜索服务',
+                  body: '右上角添加 Tavily、Exa、Brave、LinkUp 或自定义搜索接口。',
+                ),
+              ...providers.map(
+                (provider) {
+                  final selected =
+                      widget.store.settings.defaultSearchProviderId ==
+                          provider.id;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _SettingsCard(
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 6,
+                        ),
+                        leading: Icon(
+                          selected
+                              ? Icons.check_circle_rounded
+                              : Icons.travel_explore_rounded,
+                          color: selected ? _ink : _muted,
+                        ),
+                        title: Text(provider.name),
+                        subtitle: Text(
+                          '${provider.kind} · ${provider.enabled ? '已启用' : '已停用'}',
+                        ),
+                        trailing: IconButton(
+                          tooltip: '设为默认',
+                          icon: const Icon(Icons.radio_button_checked_rounded),
+                          onPressed: selected
+                              ? null
+                              : () => _setDefaultProvider(provider.id),
+                        ),
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => SearchProviderDetailPage(
+                              store: widget.store,
+                              providerId: provider.id,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showAddSearchProvider() async {
+    final existing =
+        widget.store.settings.searchProviders.map((item) => item.id).toSet();
+    final presets = defaultSearchProviders()
+        .where((provider) => !existing.contains(provider.id))
+        .toList();
+    final selected = await _showChoiceMenu(
+      context,
+      children: [
+        ...presets.map(
+          (provider) => _MenuChoice(
+            icon: Icons.travel_explore_rounded,
+            label: provider.name,
+            subtitle: provider.kind,
+            value: provider.id,
+          ),
+        ),
+        const _MenuChoice(
+          icon: Icons.add_circle_outline_rounded,
+          label: '自定义搜索',
+          subtitle: 'POST query/max_results',
+          value: '__custom__',
+        ),
+      ],
+    );
+    if (!mounted || selected == null) {
+      return;
+    }
+    final provider = selected == '__custom__'
+        ? SearchProviderConfig(
+            id: newEntityId(),
+            name: '自定义搜索',
+            kind: 'custom',
+            baseUrl: '',
+          )
+        : SearchProviderConfig.fromJson(
+            defaultSearchProviders()
+                .firstWhere((item) => item.id == selected)
+                .toJson(),
+          );
+    await widget.store.updateSearchProvider(provider);
+    if (!mounted) {
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => SearchProviderDetailPage(
+          store: widget.store,
+          providerId: provider.id,
+        ),
+      ),
+    );
+  }
+}
+
+class SearchProviderDetailPage extends StatefulWidget {
+  const SearchProviderDetailPage({
+    super.key,
+    required this.store,
+    required this.providerId,
+  });
+
+  final AppStore store;
+  final String providerId;
+
+  @override
+  State<SearchProviderDetailPage> createState() =>
+      _SearchProviderDetailPageState();
+}
+
+class _SearchProviderDetailPageState extends State<SearchProviderDetailPage> {
+  late SearchProviderConfig provider;
+  late final TextEditingController name;
+  late final TextEditingController kind;
+  late final TextEditingController baseUrl;
+  late final TextEditingController apiKey;
+  late final TextEditingController maxResults;
+  late final TextEditingController headers;
+  late final TextEditingController extraBody;
+  late bool enabled;
+
+  @override
+  void initState() {
+    super.initState();
+    provider = SearchProviderConfig.fromJson(
+      widget.store.searchProviderById(widget.providerId).toJson(),
+    );
+    name = TextEditingController(text: provider.name);
+    kind = TextEditingController(text: provider.kind);
+    baseUrl = TextEditingController(text: provider.baseUrl);
+    apiKey = TextEditingController(
+      text: widget.store.apiKeyForSearchProvider(provider.id),
+    );
+    maxResults = TextEditingController(text: provider.maxResults.toString());
+    headers = TextEditingController(text: provider.customHeadersJson);
+    extraBody = TextEditingController(text: provider.extraBodyJson);
+    enabled = provider.enabled;
+  }
+
+  @override
+  void dispose() {
+    name.dispose();
+    kind.dispose();
+    baseUrl.dispose();
+    apiKey.dispose();
+    maxResults.dispose();
+    headers.dispose();
+    extraBody.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!_isJsonObject(headers.text) || !_isJsonObject(extraBody.text)) {
+      _snack(context, '请求头和扩展请求体必须是 JSON 对象。');
+      return;
+    }
+    provider
+      ..name = name.text.trim()
+      ..kind = kind.text.trim().isEmpty ? 'custom' : kind.text.trim()
+      ..baseUrl = baseUrl.text.trim()
+      ..enabled = enabled
+      ..maxResults = _intOr(maxResults.text, 5).clamp(1, 10).toInt()
+      ..customHeadersJson = headers.text.trim().isEmpty ? '{}' : headers.text
+      ..extraBodyJson = extraBody.text.trim().isEmpty ? '{}' : extraBody.text
+      ..updatedAt = DateTime.now();
+    await widget.store.updateSearchProvider(
+      provider,
+      apiKey: apiKey.text.trim(),
+    );
+    if (!mounted) {
+      return;
+    }
+    _snack(context, '已保存');
+  }
+
+  Future<void> _delete() async {
+    await widget.store.deleteSearchProvider(provider.id);
+    if (!mounted) {
+      return;
+    }
+    Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _EditScaffold(
+      title: provider.name,
+      onSave: _save,
+      actions: [
+        IconButton(
+          tooltip: '删除搜索服务',
+          icon: const Icon(Icons.delete_outline_rounded),
+          onPressed: _delete,
+        ),
+      ],
+      child: Column(
+        children: [
+          SwitchListTile(
+            value: enabled,
+            activeThumbColor: _ink,
+            contentPadding: EdgeInsets.zero,
+            title: const Text('启用'),
+            onChanged: (value) => setState(() => enabled = value),
+          ),
+          _Field(label: '名称', hint: 'Tavily', controller: name),
+          _Field(
+            label: '类型',
+            hint: 'tavily / exa / brave / linkup / custom',
+            controller: kind,
+          ),
+          _Field(
+            label: 'Base URL',
+            hint: 'https://api.tavily.com',
+            controller: baseUrl,
+            keyboardType: TextInputType.url,
+          ),
+          _Field(
+            label: 'API Key',
+            hint: '搜索服务密钥',
+            controller: apiKey,
+            obscureText: true,
+          ),
+          _Field(
+            label: '最大结果数',
+            hint: '5',
+            controller: maxResults,
+            keyboardType: TextInputType.number,
+          ),
+          _Field(
+            label: '自定义请求头 JSON',
+            hint: '{"X-Header":"value"}',
+            controller: headers,
+            minLines: 4,
+            maxLines: 8,
+          ),
+          _Field(
+            label: '扩展请求体 JSON',
+            hint: '{"search_depth":"advanced"}',
+            controller: extraBody,
+            minLines: 4,
+            maxLines: 8,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class McpSettingsPage extends StatelessWidget {
+  const McpSettingsPage({super.key, required this.store});
+
+  final AppStore store;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: store,
+      builder: (context, _) {
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('MCP 服务'),
+            actions: [
+              IconButton(
+                tooltip: '添加 MCP 服务',
+                icon: const Icon(Icons.add_rounded),
+                onPressed: () async {
+                  final server = McpServerConfig(
+                    id: newEntityId(),
+                    name: 'MCP 服务',
+                    url: '',
+                  );
+                  await store.updateMcpServer(server);
+                  if (!context.mounted) {
+                    return;
+                  }
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => McpServerDetailPage(
+                        store: store,
+                        serverId: server.id,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+          body: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+            children: [
+              const _StaticNotice(
+                title: '移动端 MCP',
+                body: '当前先支持远程 Streamable HTTP / SSE 配置；本地 stdio 服务不适合直接在安卓 App 内运行。',
+              ),
+              if (store.settings.mcpServers.isEmpty)
+                const _StaticNotice(
+                  title: '没有 MCP 服务',
+                  body: '右上角添加远程 MCP 服务后，可在后续助手工具选择中启用。',
+                ),
+              ...store.settings.mcpServers.map(
+                (server) => Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _SettingsCard(
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 6,
+                      ),
+                      leading: Icon(
+                        server.enabled
+                            ? Icons.account_tree_rounded
+                            : Icons.account_tree_outlined,
+                        color: server.enabled ? _ink : _muted,
+                      ),
+                      title: Text(server.name),
+                      subtitle: Text('${server.transport} · ${server.url}'),
+                      trailing: const Icon(
+                        Icons.chevron_right_rounded,
+                        color: _muted,
+                      ),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => McpServerDetailPage(
+                            store: store,
+                            serverId: server.id,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class McpServerDetailPage extends StatefulWidget {
+  const McpServerDetailPage({
+    super.key,
+    required this.store,
+    required this.serverId,
+  });
+
+  final AppStore store;
+  final String serverId;
+
+  @override
+  State<McpServerDetailPage> createState() => _McpServerDetailPageState();
+}
+
+class _McpServerDetailPageState extends State<McpServerDetailPage> {
+  late McpServerConfig server;
+  late final TextEditingController name;
+  late final TextEditingController url;
+  late final TextEditingController transport;
+  late final TextEditingController headers;
+  late final TextEditingController notes;
+  late bool enabled;
+
+  @override
+  void initState() {
+    super.initState();
+    server = McpServerConfig.fromJson(
+      widget.store.settings.mcpServers
+          .firstWhere((item) => item.id == widget.serverId)
+          .toJson(),
+    );
+    name = TextEditingController(text: server.name);
+    url = TextEditingController(text: server.url);
+    transport = TextEditingController(text: server.transport);
+    headers = TextEditingController(text: server.customHeadersJson);
+    notes = TextEditingController(text: server.notes);
+    enabled = server.enabled;
+  }
+
+  @override
+  void dispose() {
+    name.dispose();
+    url.dispose();
+    transport.dispose();
+    headers.dispose();
+    notes.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!_isJsonObject(headers.text)) {
+      _snack(context, '自定义请求头必须是 JSON 对象。');
+      return;
+    }
+    server
+      ..name = name.text.trim().isEmpty ? 'MCP 服务' : name.text.trim()
+      ..url = url.text.trim()
+      ..transport = transport.text.trim().isEmpty
+          ? 'streamable_http'
+          : transport.text.trim()
+      ..enabled = enabled
+      ..customHeadersJson = headers.text.trim().isEmpty ? '{}' : headers.text
+      ..notes = notes.text.trim()
+      ..updatedAt = DateTime.now();
+    await widget.store.updateMcpServer(server);
+    if (!mounted) {
+      return;
+    }
+    _snack(context, '已保存');
+  }
+
+  Future<void> _delete() async {
+    await widget.store.deleteMcpServer(server.id);
+    if (!mounted) {
+      return;
+    }
+    Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _EditScaffold(
+      title: server.name,
+      onSave: _save,
+      actions: [
+        IconButton(
+          tooltip: '删除 MCP 服务',
+          icon: const Icon(Icons.delete_outline_rounded),
+          onPressed: _delete,
+        ),
+      ],
+      child: Column(
+        children: [
+          SwitchListTile(
+            value: enabled,
+            activeThumbColor: _ink,
+            contentPadding: EdgeInsets.zero,
+            title: const Text('启用'),
+            onChanged: (value) => setState(() => enabled = value),
+          ),
+          _Field(label: '名称', hint: 'Browser MCP', controller: name),
+          _Field(
+            label: '服务地址',
+            hint: 'https://example.com/mcp',
+            controller: url,
+            keyboardType: TextInputType.url,
+          ),
+          _Field(
+            label: '传输方式',
+            hint: 'streamable_http / sse',
+            controller: transport,
+          ),
+          _Field(
+            label: '自定义请求头 JSON',
+            hint: '{"Authorization":"Bearer ..."}',
+            controller: headers,
+            minLines: 4,
+            maxLines: 8,
+          ),
+          _Field(
+            label: '备注',
+            hint: '用途、工具范围、权限说明',
+            controller: notes,
+            minLines: 3,
+            maxLines: 6,
           ),
         ],
       ),
@@ -965,16 +1694,149 @@ class _DataPageState extends State<DataPage> {
   }
 }
 
+class _FloatingSearchField extends StatelessWidget {
+  const _FloatingSearchField({
+    required this.hint,
+    required this.onChanged,
+  });
+
+  final String hint;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 22,
+            spreadRadius: 1,
+          ),
+        ],
+      ),
+      child: TextField(
+        onChanged: onChanged,
+        cursorColor: _ink,
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: const TextStyle(color: _muted, fontSize: 14),
+          prefixIcon: const Icon(Icons.search_rounded, color: _muted, size: 20),
+          isDense: true,
+          filled: true,
+          fillColor: Colors.white,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(20),
+            borderSide: BorderSide.none,
+          ),
+        ),
+        style: const TextStyle(
+          color: _ink,
+          fontSize: 14.5,
+          height: 1.25,
+          letterSpacing: 0,
+        ),
+      ),
+    );
+  }
+}
+
+class _MenuChoice extends StatelessWidget {
+  const _MenuChoice({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.subtitle = '',
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Icon(icon, color: _ink),
+      title: Text(label),
+      subtitle: subtitle.isEmpty ? null : Text(subtitle),
+      onTap: () => Navigator.pop(context, value),
+    );
+  }
+}
+
+Future<String?> _showChoiceMenu(
+  BuildContext context, {
+  required List<_MenuChoice> children,
+}) {
+  return showGeneralDialog<String>(
+    context: context,
+    barrierDismissible: true,
+    barrierLabel: '关闭',
+    barrierColor: Colors.black.withValues(alpha: 0.08),
+    transitionDuration: const Duration(milliseconds: 170),
+    pageBuilder: (context, _, __) {
+      return Center(
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            width: MediaQuery.sizeOf(context).width * 0.78,
+            constraints: const BoxConstraints(maxWidth: 380),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.14),
+                  blurRadius: 34,
+                  spreadRadius: 1,
+                ),
+              ],
+            ),
+            child: SafeArea(
+              minimum: const EdgeInsets.symmetric(vertical: 8),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(context).height * 0.72,
+                ),
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: EdgeInsets.zero,
+                  children: children,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    },
+    transitionBuilder: (context, animation, _, child) {
+      final curved =
+          CurvedAnimation(parent: animation, curve: Curves.easeOutBack);
+      return FadeTransition(
+        opacity: animation,
+        child: ScaleTransition(scale: curved, child: child),
+      );
+    },
+  );
+}
+
 class _EditScaffold extends StatelessWidget {
   const _EditScaffold({
     required this.title,
     required this.onSave,
     required this.child,
+    this.actions = const [],
   });
 
   final String title;
   final Future<void> Function() onSave;
   final Widget child;
+  final List<Widget> actions;
 
   @override
   Widget build(BuildContext context) {
@@ -982,6 +1844,7 @@ class _EditScaffold extends StatelessWidget {
       appBar: AppBar(
         title: Text(title),
         actions: [
+          ...actions,
           TextButton(
             onPressed: onSave,
             child: const Text(
@@ -1033,7 +1896,7 @@ class _SettingsCard extends StatelessWidget {
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.06),
             blurRadius: 18,
-            offset: const Offset(0, 8),
+            spreadRadius: 1,
           ),
         ],
       ),
@@ -1249,7 +2112,7 @@ class _PromptField extends StatelessWidget {
                             BoxShadow(
                               color: Colors.black.withValues(alpha: 0.10),
                               blurRadius: 14,
-                              offset: const Offset(0, 6),
+                              spreadRadius: 1,
                             ),
                           ],
                   ),
@@ -1381,7 +2244,7 @@ class _ModelPickerTile extends StatelessWidget {
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.12),
                 blurRadius: 30,
-                offset: const Offset(0, 12),
+                spreadRadius: 1,
               ),
             ],
           ),

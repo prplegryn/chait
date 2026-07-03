@@ -132,6 +132,40 @@ class AiClient {
     return models..sort((a, b) => a.name.compareTo(b.name));
   }
 
+  Future<String> fetchBalance({
+    required AiProviderConfig provider,
+    required String apiKey,
+  }) async {
+    if (provider.baseUrl.trim().isEmpty ||
+        provider.balancePath.trim().isEmpty) {
+      return '';
+    }
+    _client = HttpClient();
+    try {
+      final request = await _client!.getUrl(_balanceUri(provider));
+      request.headers.contentType = ContentType.json;
+      if (apiKey.trim().isNotEmpty) {
+        request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $apiKey');
+      }
+      for (final entry
+          in _decodeJsonObject(provider.customHeadersJson).entries) {
+        request.headers.set(entry.key, entry.value.toString());
+      }
+      final response =
+          await request.close().timeout(const Duration(seconds: 20));
+      final raw = await response.transform(utf8.decoder).join();
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return '';
+      }
+      final decoded = _tryDecodeJson(raw);
+      final balance = _extractBalance(decoded, provider.balanceJsonPath);
+      return balance.trim();
+    } finally {
+      _client?.close();
+      _client = null;
+    }
+  }
+
   Future<String> generateText({
     required AppSettings settings,
     required String apiKey,
@@ -204,6 +238,21 @@ class AiClient {
       );
     }
     return Uri.parse('$normalized$path');
+  }
+
+  Uri _balanceUri(AiProviderConfig provider) {
+    final baseUrl = provider.baseUrl.trim();
+    final normalized = baseUrl.endsWith('/')
+        ? baseUrl.substring(0, baseUrl.length - 1)
+        : baseUrl;
+    final path = provider.balancePath.trim();
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return Uri.parse(path);
+    }
+    if (normalized.endsWith(path)) {
+      return Uri.parse(normalized);
+    }
+    return Uri.parse('$normalized${path.startsWith('/') ? path : '/$path'}');
   }
 
   Uri _modelDetailUri(AiProviderConfig provider, String modelId) {
@@ -539,6 +588,94 @@ class AiClient {
     return _contentToText(decoded['content']);
   }
 
+  String _extractBalance(Object? decoded, String jsonPath) {
+    if (decoded == null) {
+      return '';
+    }
+    if (jsonPath.trim().isNotEmpty) {
+      final value = _valueAtPath(decoded, jsonPath.trim());
+      final text = _balanceText(value);
+      if (text.isNotEmpty) {
+        return text;
+      }
+    }
+    if (decoded is Map) {
+      final map = Map<String, Object?>.from(decoded);
+      final data = _mapValue(map['data']);
+      final openRouterCredit = _toDouble(data['total_credits']);
+      final openRouterUsage = _toDouble(data['total_usage']);
+      if (openRouterCredit != null && openRouterUsage != null) {
+        return _formatNumber(openRouterCredit - openRouterUsage);
+      }
+      for (final candidate in [map, data]) {
+        for (final key in const [
+          'balance',
+          'total_balance',
+          'totalBalance',
+          'available_balance',
+          'availableBalance',
+          'credit',
+          'credits',
+          'quota',
+          'amount',
+          'money',
+        ]) {
+          final text = _balanceText(candidate[key]);
+          if (text.isNotEmpty) {
+            return text;
+          }
+        }
+      }
+    }
+    return '';
+  }
+
+  Object? _valueAtPath(Object? value, String path) {
+    Object? current = value;
+    for (final segment in path.split('.')) {
+      if (current is Map) {
+        current = current[segment];
+      } else if (current is List) {
+        final index = int.tryParse(segment);
+        current = index == null || index < 0 || index >= current.length
+            ? null
+            : current[index];
+      } else {
+        return null;
+      }
+    }
+    return current;
+  }
+
+  String _balanceText(Object? value) {
+    if (value == null) {
+      return '';
+    }
+    if (value is num) {
+      return _formatNumber(value.toDouble());
+    }
+    if (value is String && value.trim().isNotEmpty) {
+      return value.trim();
+    }
+    if (value is Map) {
+      final map = Map<String, Object?>.from(value);
+      final amount = _balanceText(
+        map['amount'] ?? map['value'] ?? map['balance'],
+      );
+      final currency = _contentToText(map['currency']).trim();
+      if (amount.isNotEmpty && currency.isNotEmpty) {
+        return '$amount $currency';
+      }
+      return amount;
+    }
+    return '';
+  }
+
+  String _formatNumber(double value) {
+    final fixed = value.toStringAsFixed(4);
+    return fixed.replaceFirst(RegExp(r'\.?0+$'), '');
+  }
+
   String _contentToText(Object? content) {
     if (content == null) {
       return '';
@@ -645,6 +782,19 @@ class AiClient {
     }
     if (value is String) {
       return int.tryParse(value);
+    }
+    return null;
+  }
+
+  double? _toDouble(Object? value) {
+    if (value is double) {
+      return value;
+    }
+    if (value is int) {
+      return value.toDouble();
+    }
+    if (value is String) {
+      return double.tryParse(value);
     }
     return null;
   }

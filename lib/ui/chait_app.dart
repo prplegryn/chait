@@ -24,12 +24,22 @@ class ChaitApp extends StatelessWidget {
           onSurface: Color(0xFF111111),
           outline: Color(0xFFE6E6E6),
         ),
+        fontFamily: 'Inter',
         fontFamilyFallback: const [
-          'Roboto',
           'Noto Sans CJK SC',
           'Noto Sans SC',
+          'Roboto',
           'sans-serif',
         ],
+        textTheme: const TextTheme(
+          titleLarge: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+          titleMedium: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          bodyLarge: TextStyle(fontSize: 15.5, height: 1.45),
+          bodyMedium: TextStyle(fontSize: 14.5, height: 1.42),
+          bodySmall: TextStyle(fontSize: 12.5, height: 1.35),
+          labelLarge: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600),
+          labelMedium: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500),
+        ),
         appBarTheme: const AppBarTheme(
           backgroundColor: Colors.white,
           foregroundColor: Color(0xFF111111),

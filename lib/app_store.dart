@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'ai_client.dart';
 import 'models.dart';
+import 'search_client.dart';
 
 class AppStore extends ChangeNotifier {
   AppStore();
@@ -17,6 +18,7 @@ class AppStore extends ChangeNotifier {
   static const _currentAssistantKey = 'currentAssistantId';
   static const _apiKeyKey = 'apiKey';
   static const _providerApiKeysKey = 'providerApiKeys';
+  static const _searchProviderApiKeysKey = 'searchProviderApiKeys';
 
   final _secureStorage = const FlutterSecureStorage(
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
@@ -27,6 +29,7 @@ class AppStore extends ChangeNotifier {
   AppSettings settings = AppSettings();
   String apiKey = '';
   final Map<String, String> providerApiKeys = {};
+  final Map<String, String> searchProviderApiKeys = {};
   String currentSessionId = '';
   String currentAssistantId = 'assistant-writing';
   bool isReady = false;
@@ -50,6 +53,13 @@ class AppStore extends ChangeNotifier {
     return sessions.first;
   }
 
+  AssistantPreset assistantForSession(ChatSession session) {
+    return assistants.firstWhere(
+      (assistant) => assistant.id == session.assistantId,
+      orElse: () => currentAssistant,
+    );
+  }
+
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
     assistants
@@ -66,6 +76,11 @@ class AppStore extends ChangeNotifier {
     providerApiKeys
       ..clear()
       ..addAll(_decodeStringMap(providerKeyJson));
+    final searchProviderKeyJson =
+        await _secureStorage.read(key: _searchProviderApiKeysKey);
+    searchProviderApiKeys
+      ..clear()
+      ..addAll(_decodeStringMap(searchProviderKeyJson));
     if (apiKey.isNotEmpty && providerApiKeys.isEmpty) {
       providerApiKeys[settings.providers.first.id] = apiKey;
     }
@@ -104,11 +119,16 @@ class AppStore extends ChangeNotifier {
       key: _providerApiKeysKey,
       value: jsonEncode(providerApiKeys),
     );
+    await _secureStorage.write(
+      key: _searchProviderApiKeysKey,
+      value: jsonEncode(searchProviderApiKeys),
+    );
   }
 
   Future<void> updateSettings(AppSettings next, String nextApiKey) async {
     settings = next;
     _ensureProviders();
+    _repairModelSelections();
     apiKey = nextApiKey;
     notifyListeners();
     await save();
@@ -127,12 +147,39 @@ class AppStore extends ChangeNotifier {
     if (apiKey != null) {
       providerApiKeys[provider.id] = apiKey;
     }
+    _repairModelSelections();
+    notifyListeners();
+    await save();
+  }
+
+  Future<void> deleteProvider(String providerId) async {
+    if (settings.providers.length <= 1) {
+      return;
+    }
+    settings.providers.removeWhere((provider) => provider.id == providerId);
+    settings.models.removeWhere((model) => model.providerId == providerId);
+    providerApiKeys.remove(providerId);
+    _repairModelSelections();
     notifyListeners();
     await save();
   }
 
   String apiKeyForProvider(String providerId) {
     return providerApiKeys[providerId] ?? '';
+  }
+
+  Future<String> refreshProviderBalance(String providerId) async {
+    final provider = providerById(providerId);
+    final balance = await AiClient().fetchBalance(
+      provider: provider,
+      apiKey: apiKeyForProvider(provider.id),
+    );
+    provider
+      ..balanceText = balance
+      ..balanceUpdatedAt = balance.isEmpty ? null : DateTime.now();
+    notifyListeners();
+    await save();
+    return balance;
   }
 
   Future<List<AiModelConfig>> refreshProviderModels(String providerId) async {
@@ -152,6 +199,7 @@ class AppStore extends ChangeNotifier {
       }
     }
     provider.updatedAt = DateTime.now();
+    _repairModelSelections();
     notifyListeners();
     await save();
     return fetched;
@@ -163,15 +211,20 @@ class AppStore extends ChangeNotifier {
     if (enabled && settings.defaultModelId.isEmpty) {
       settings.defaultModelId = model.id;
     }
-    if (!settings.models.any((item) => item.id == settings.defaultModelId && item.enabled)) {
-      settings.defaultModelId = enabledModels.isEmpty ? '' : enabledModels.first.id;
-    }
+    _repairModelSelections();
     notifyListeners();
     await save();
   }
 
   Future<void> setSessionModel(String modelId) async {
     currentSession.modelId = modelId;
+    _repairModelSelections();
+    notifyListeners();
+    await save();
+  }
+
+  Future<void> setSessionSearchEnabled(bool enabled) async {
+    currentSession.searchEnabled = enabled;
     notifyListeners();
     await save();
   }
@@ -190,16 +243,71 @@ class AppStore extends ChangeNotifier {
   AiModelConfig modelById(String id) {
     return settings.models.firstWhere(
       (model) => model.id == id,
-      orElse: () => enabledModels.isNotEmpty
-          ? enabledModels.first
-          : AiModelConfig(
-              id: modelConfigId('legacy', settings.model),
-              providerId: settings.providers.first.id,
-              providerName: settings.providers.first.name,
-              name: settings.model,
-              enabled: true,
-            ),
+      orElse: () => throw AiException('模型不可用或未添加：$id'),
     );
+  }
+
+  SearchProviderConfig searchProviderById(String id) {
+    return settings.searchProviders.firstWhere(
+      (provider) => provider.id == id,
+      orElse: () => settings.searchProviders.first,
+    );
+  }
+
+  String apiKeyForSearchProvider(String providerId) {
+    return searchProviderApiKeys[providerId] ?? '';
+  }
+
+  Future<void> updateSearchProvider(
+    SearchProviderConfig provider, {
+    String? apiKey,
+  }) async {
+    final index =
+        settings.searchProviders.indexWhere((item) => item.id == provider.id);
+    if (index == -1) {
+      settings.searchProviders.add(provider);
+    } else {
+      settings.searchProviders[index] = provider;
+    }
+    if (apiKey != null) {
+      searchProviderApiKeys[provider.id] = apiKey;
+    }
+    if (settings.defaultSearchProviderId.isEmpty) {
+      settings.defaultSearchProviderId = provider.id;
+    }
+    _repairModelSelections();
+    notifyListeners();
+    await save();
+  }
+
+  Future<void> deleteSearchProvider(String providerId) async {
+    settings.searchProviders.removeWhere((provider) => provider.id == providerId);
+    searchProviderApiKeys.remove(providerId);
+    if (settings.defaultSearchProviderId == providerId) {
+      settings.defaultSearchProviderId = settings.searchProviders.isEmpty
+          ? ''
+          : settings.searchProviders.first.id;
+    }
+    _repairModelSelections();
+    notifyListeners();
+    await save();
+  }
+
+  Future<void> updateMcpServer(McpServerConfig server) async {
+    final index = settings.mcpServers.indexWhere((item) => item.id == server.id);
+    if (index == -1) {
+      settings.mcpServers.add(server);
+    } else {
+      settings.mcpServers[index] = server;
+    }
+    notifyListeners();
+    await save();
+  }
+
+  Future<void> deleteMcpServer(String serverId) async {
+    settings.mcpServers.removeWhere((server) => server.id == serverId);
+    notifyListeners();
+    await save();
   }
 
   Future<void> upsertAssistant(AssistantPreset preset) async {
@@ -323,15 +431,26 @@ class AppStore extends ChangeNotifier {
     _activeClient = AiClient();
     try {
       final target = _resolveModelTarget(session);
+      final assistant = assistantForSession(session);
+      final searchContext = await _searchContextFor(session, trimmed);
+      final outboundMessages = [
+        if (searchContext.isNotEmpty)
+          ChatMessage(
+            id: newEntityId(),
+            role: 'system',
+            content: searchContext,
+            createdAt: DateTime.now(),
+          ),
+        ...session.messages
+            .where((message) => !message.isStreaming)
+            .where((message) => message.content.trim().isNotEmpty),
+      ];
       await _activeClient!.sendChat(
         config: AiRequestConfig(
           settings: settings,
           apiKey: target.apiKey,
-          assistant: currentAssistant,
-          messages: session.messages
-              .where((message) => !message.isStreaming)
-              .where((message) => message.content.trim().isNotEmpty)
-              .toList(),
+          assistant: assistant,
+          messages: outboundMessages,
           baseUrl: target.provider.baseUrl,
           model: target.model.name,
           customHeadersJson: target.provider.customHeadersJson,
@@ -411,6 +530,7 @@ class AppStore extends ChangeNotifier {
       'settings': settings.toJson(),
       if (includeApiKey) 'apiKey': apiKey,
       if (includeApiKey) 'providerApiKeys': providerApiKeys,
+      if (includeApiKey) 'searchProviderApiKeys': searchProviderApiKeys,
     };
     return prettyJson(payload);
   }
@@ -427,11 +547,12 @@ class AppStore extends ChangeNotifier {
       orElse: () => currentSession,
     );
     final target = _resolveSpecificModelTarget(settings.titleModelId);
+    final assistant = assistantForSession(session);
     try {
       final title = await AiClient().generateText(
         settings: settings,
         apiKey: target.apiKey,
-        assistant: currentAssistant,
+        assistant: assistant,
         baseUrl: target.provider.baseUrl,
         model: target.model.name,
         customHeadersJson: target.provider.customHeadersJson,
@@ -528,6 +649,14 @@ class AppStore extends ChangeNotifier {
           (key, value) => MapEntry(key.toString(), value.toString()),
         ));
     }
+    final importedSearchProviderKeys = map['searchProviderApiKeys'];
+    if (importedSearchProviderKeys is Map) {
+      searchProviderApiKeys
+        ..clear()
+        ..addAll(importedSearchProviderKeys.map(
+          (key, value) => MapEntry(key.toString(), value.toString()),
+        ));
+    }
     currentAssistantId = assistants.first.id;
     currentSessionId = sessions.first.id;
     _repairSelection();
@@ -544,6 +673,7 @@ class AppStore extends ChangeNotifier {
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
       messages: [],
+      searchEnabled: settings.searchEnabledByDefault,
     );
   }
 
@@ -562,8 +692,26 @@ class AppStore extends ChangeNotifier {
       for (final message in session.messages) {
         message.isStreaming = false;
       }
-      if (session.modelId.isNotEmpty &&
-          !settings.models.any((model) => model.id == session.modelId && model.enabled)) {
+    }
+    _repairModelSelections();
+  }
+
+  void _repairModelSelections() {
+    final enabledIds = settings.models
+        .where((model) => model.enabled)
+        .map((model) => model.id)
+        .toSet();
+    if (!enabledIds.contains(settings.defaultModelId)) {
+      settings.defaultModelId = enabledIds.isEmpty ? '' : enabledIds.first;
+    }
+    if (!enabledIds.contains(settings.titleModelId)) {
+      settings.titleModelId = '';
+    }
+    if (!enabledIds.contains(settings.polishModelId)) {
+      settings.polishModelId = '';
+    }
+    for (final session in sessions) {
+      if (session.modelId.isNotEmpty && !enabledIds.contains(session.modelId)) {
         session.modelId = '';
       }
     }
@@ -578,11 +726,25 @@ class AppStore extends ChangeNotifier {
         assistant.preferredModelId = '';
       }
     }
+    final searchIds = settings.searchProviders
+        .where((provider) => provider.enabled)
+        .map((provider) => provider.id)
+        .toSet();
+    if (!searchIds.contains(settings.defaultSearchProviderId)) {
+      settings.defaultSearchProviderId =
+          searchIds.isEmpty ? '' : searchIds.first;
+    }
   }
 
   void _ensureProviders() {
     if (settings.providers.isEmpty) {
       settings.providers.addAll(defaultProviders());
+    }
+    if (settings.searchProviders.isEmpty) {
+      settings.searchProviders.addAll(defaultSearchProviders());
+    }
+    if (settings.mcpServers.isEmpty) {
+      settings.mcpServers.addAll(defaultMcpServers());
     }
     if (settings.models.isEmpty &&
         settings.model.trim().isNotEmpty &&
@@ -600,8 +762,26 @@ class AppStore extends ChangeNotifier {
     }
   }
 
+  Future<String> _searchContextFor(ChatSession session, String prompt) async {
+    if (!session.searchEnabled || settings.defaultSearchProviderId.isEmpty) {
+      return '';
+    }
+    try {
+      final provider = searchProviderById(settings.defaultSearchProviderId);
+      final client = SearchClient();
+      final results = await client.search(
+        provider: provider,
+        apiKey: apiKeyForSearchProvider(provider.id),
+        query: prompt,
+      );
+      return client.formatResults(results);
+    } catch (_) {
+      return '';
+    }
+  }
+
   _ResolvedModelTarget _resolveModelTarget(ChatSession session) {
-    final assistant = currentAssistant;
+    final assistant = assistantForSession(session);
     final id = session.modelId.trim().isNotEmpty
         ? session.modelId
         : assistant.preferredModelId.trim().isNotEmpty
@@ -615,6 +795,9 @@ class AppStore extends ChangeNotifier {
       throw const AiException('请先在设置里添加并选择模型。');
     }
     final model = modelById(modelId);
+    if (!model.enabled) {
+      throw AiException('模型未启用：${model.displayName}');
+    }
     final provider = providerById(model.providerId);
     final key = apiKeyForProvider(provider.id);
     if (provider.baseUrl.trim().isEmpty || model.name.trim().isEmpty || key.isEmpty) {

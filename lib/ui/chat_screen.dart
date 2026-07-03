@@ -84,6 +84,36 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  Future<void> _openComposerMenu() async {
+    final searchEnabled = widget.store.currentSession.searchEnabled;
+    final selected = await _showScaleMenu(
+      context,
+      children: [
+        const _MenuAction(
+          icon: Icons.memory_rounded,
+          label: '当前会话模型',
+          value: 'model',
+        ),
+        _MenuAction(
+          icon: searchEnabled
+              ? Icons.travel_explore_rounded
+              : Icons.public_off_rounded,
+          label: searchEnabled ? '关闭搜索' : '开启搜索',
+          value: 'search',
+          subtitle: searchEnabled ? '本会话将不再注入搜索结果' : '本会话发送前会先搜索',
+        ),
+      ],
+    );
+    if (!mounted || selected == null) {
+      return;
+    }
+    if (selected == 'model') {
+      _openCurrentSessionModel();
+    } else if (selected == 'search') {
+      widget.store.setSessionSearchEnabled(!searchEnabled);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final session = widget.store.currentSession;
@@ -105,7 +135,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   child: session.messages.isEmpty
                       ? Padding(
                           padding: EdgeInsets.only(
-                            top: MediaQuery.paddingOf(context).top + 76,
+                            top: MediaQuery.paddingOf(context).top + 96,
                             bottom: 108,
                           ),
                           child: _EmptyChat(assistant: assistant),
@@ -116,7 +146,7 @@ class _ChatScreenState extends State<ChatScreen> {
                               ScrollViewKeyboardDismissBehavior.onDrag,
                           padding: EdgeInsets.fromLTRB(
                             18,
-                            MediaQuery.paddingOf(context).top + 98,
+                            MediaQuery.paddingOf(context).top + 122,
                             18,
                             118,
                           ),
@@ -148,7 +178,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 isSending: widget.store.isSending,
                 onSend: _send,
                 onStop: widget.store.stopGeneration,
-                onOpenMenu: _openCurrentSessionModel,
+                onOpenMenu: _openComposerMenu,
               ),
             ),
           ],
@@ -175,12 +205,13 @@ class _ImmersiveTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final top = MediaQuery.paddingOf(context).top;
+    final contentTop = top > 6 ? top - 6 : top;
     return Positioned(
       left: 0,
       right: 0,
       top: 0,
       child: Container(
-        height: top + 92,
+        height: top + 112,
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
@@ -188,16 +219,18 @@ class _ImmersiveTopBar extends StatelessWidget {
             colors: [
               Colors.white,
               Colors.white,
-              Color(0xF2FFFFFF),
+              Color(0xFAFFFFFF),
+              Color(0xE8FFFFFF),
+              Color(0xB8FFFFFF),
               Color(0x00FFFFFF),
             ],
-            stops: [0, 0.58, 0.78, 1],
+            stops: [0, 0.46, 0.64, 0.82, 1],
           ),
         ),
         child: Padding(
-          padding: EdgeInsets.only(top: top),
+          padding: EdgeInsets.only(top: contentTop),
           child: SizedBox(
-            height: 58,
+            height: 54,
             child: Row(
               children: [
                 const SizedBox(width: 8),
@@ -348,6 +381,8 @@ class MessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isUser = message.isUser;
+    final isGenerating =
+        !isUser && message.isStreaming && message.content.trim().isEmpty;
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: Column(
@@ -361,12 +396,18 @@ class MessageBubble extends StatelessWidget {
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
                     maxWidth: constraints.maxWidth * 0.82,
+                    minWidth: isGenerating ? 112 : 0,
+                    minHeight: isGenerating ? 42 : 0,
                   ),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 180),
                     curve: Curves.easeOutCubic,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 15, vertical: 11),
+                    padding: isGenerating
+                        ? EdgeInsets.zero
+                        : const EdgeInsets.symmetric(
+                            horizontal: 15,
+                            vertical: 11,
+                          ),
                     decoration: BoxDecoration(
                       color: isUser ? _userBubble : _bubble,
                       borderRadius: BorderRadius.only(
@@ -376,7 +417,13 @@ class MessageBubble extends StatelessWidget {
                         bottomRight: Radius.circular(isUser ? 6 : 20),
                       ),
                     ),
-                    child: _MessageContent(message: message),
+                    child: isGenerating
+                        ? const SizedBox(
+                            width: 112,
+                            height: 42,
+                            child: _StreamingHighlight(),
+                          )
+                        : _MessageContent(message: message),
                   ),
                 ),
               );
@@ -419,56 +466,36 @@ class _MessageContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (message.content.isEmpty && message.isStreaming) {
-      return const SizedBox(
-        width: 88,
-        height: 22,
-        child: _StreamingHighlight(),
-      );
-    }
     final content = message.content;
+    if (message.isStreaming) {
+      return _StreamingTextContent(text: content);
+    }
     final display = _formatForMarkdown(content);
-    return TweenAnimationBuilder<double>(
-      key: ValueKey(display.length),
-      tween: Tween(begin: 0, end: 1),
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOutCubic,
-      builder: (context, value, child) {
-        return Opacity(
-          opacity: value,
-          child: Transform.translate(
-            offset: Offset(0, (1 - value) * 3),
-            child: child,
-          ),
-        );
-      },
-      child: MarkdownBody(
-        data: display,
-        softLineBreak: true,
-        styleSheet: MarkdownStyleSheet(
-          p: const TextStyle(
-            color: _ink,
-            fontSize: 15.5,
-            height: 1.45,
-            letterSpacing: 0,
-          ),
-          code: const TextStyle(
-            color: _ink,
-            fontSize: 13.5,
-            height: 1.45,
-            fontFamily: 'monospace',
-            backgroundColor: Color(0xFFE8E8E8),
-          ),
-          codeblockDecoration: BoxDecoration(
-            color: const Color(0xFFE8E8E8),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          blockquoteDecoration: const BoxDecoration(
-            border:
-                Border(left: BorderSide(color: Color(0xFFD5D5D5), width: 3)),
-          ),
-          tableBorder: TableBorder.all(color: const Color(0xFFDCDCDC)),
+    return MarkdownBody(
+      data: display,
+      softLineBreak: true,
+      styleSheet: MarkdownStyleSheet(
+        p: const TextStyle(
+          color: _ink,
+          fontSize: 15.5,
+          height: 1.48,
+          letterSpacing: 0,
         ),
+        code: const TextStyle(
+          color: _ink,
+          fontSize: 13.5,
+          height: 1.45,
+          fontFamily: 'monospace',
+          backgroundColor: Color(0xFFE8E8E8),
+        ),
+        codeblockDecoration: BoxDecoration(
+          color: const Color(0xFFE8E8E8),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        blockquoteDecoration: const BoxDecoration(
+          border: Border(left: BorderSide(color: Color(0xFFD5D5D5), width: 3)),
+        ),
+        tableBorder: TableBorder.all(color: const Color(0xFFDCDCDC)),
       ),
     );
   }
@@ -490,6 +517,86 @@ class _MessageContent extends StatelessWidget {
       return '```xml\n$source\n```';
     }
     return source;
+  }
+}
+
+class _StreamingTextContent extends StatefulWidget {
+  const _StreamingTextContent({required this.text});
+
+  final String text;
+
+  @override
+  State<_StreamingTextContent> createState() => _StreamingTextContentState();
+}
+
+class _StreamingTextContentState extends State<_StreamingTextContent>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController controller;
+  String stableText = '';
+  String latestText = '';
+
+  @override
+  void initState() {
+    super.initState();
+    latestText = widget.text;
+    controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 220),
+    );
+    controller.forward(from: 0);
+  }
+
+  @override
+  void didUpdateWidget(covariant _StreamingTextContent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.text == latestText) {
+      return;
+    }
+    if (widget.text.startsWith(latestText)) {
+      stableText = latestText;
+    } else {
+      stableText = '';
+    }
+    latestText = widget.text;
+    controller.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        final value = Curves.easeOutCubic.transform(controller.value);
+        final suffix = latestText.startsWith(stableText)
+            ? latestText.substring(stableText.length)
+            : latestText;
+        return Text.rich(
+          TextSpan(
+            children: [
+              TextSpan(text: stableText),
+              TextSpan(
+                text: suffix,
+                style: TextStyle(
+                  color: _ink.withValues(alpha: value),
+                ),
+              ),
+            ],
+          ),
+          style: const TextStyle(
+            color: _ink,
+            fontSize: 15.5,
+            height: 1.48,
+            letterSpacing: 0,
+          ),
+        );
+      },
+    );
   }
 }
 
@@ -551,24 +658,28 @@ class _StreamingHighlightState extends State<_StreamingHighlight>
           animation: controller,
           builder: (context, _) {
             final width = constraints.maxWidth;
+            final stripWidth = width < 80 ? 48.0 : width * 0.48;
             return ClipRRect(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(20),
               child: Stack(
                 children: [
                   Container(color: const Color(0xFFECECEC)),
                   Positioned(
                     top: 0,
                     bottom: 0,
-                    left: (width + 22) * controller.value - 22,
+                    left: (width + stripWidth) * controller.value - stripWidth,
                     child: Container(
-                      width: 22,
+                      width: stripWidth,
                       decoration: const BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
                             Color(0x00FFFFFF),
+                            Color(0xD9FFFFFF),
                             Color(0xFFFFFFFF),
+                            Color(0xD9FFFFFF),
                             Color(0x00FFFFFF),
                           ],
+                          stops: [0, 0.28, 0.5, 0.72, 1],
                         ),
                       ),
                     ),
@@ -641,7 +752,7 @@ class _ComposerState extends State<Composer> {
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.10),
               blurRadius: 24,
-              offset: const Offset(0, 8),
+              spreadRadius: 1,
             ),
           ],
         ),
@@ -736,46 +847,14 @@ class _ChaitDrawerState extends State<ChaitDrawer> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(18, 10, 18, 8),
-              child: Row(
-                children: [
-                  const Text(
-                    'Chait',
-                    style: TextStyle(
-                      color: _ink,
-                      fontSize: 23,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
-              child: TextField(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+              child: _DrawerSearchField(
                 onChanged: (value) => setState(() => query = value),
-                cursorColor: _ink,
-                decoration: InputDecoration(
-                  hintText: '搜索聊天',
-                  hintStyle: const TextStyle(color: _muted, fontSize: 14),
-                  prefixIcon:
-                      const Icon(Icons.search_rounded, color: _muted, size: 20),
-                  filled: true,
-                  fillColor: _soft,
-                  isDense: true,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(18),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
               ),
             ),
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.only(bottom: 34),
                 children: [
                   if (pinned.isNotEmpty) ...[
                     _SectionLabel('置顶'),
@@ -796,7 +875,7 @@ class _ChaitDrawerState extends State<ChaitDrawer> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
               child: Row(
                 children: [
                   Expanded(
@@ -898,6 +977,53 @@ class _ChaitDrawerState extends State<ChaitDrawer> {
   }
 }
 
+class _DrawerSearchField extends StatelessWidget {
+  const _DrawerSearchField({required this.onChanged});
+
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 22,
+            spreadRadius: 1,
+          ),
+        ],
+      ),
+      child: TextField(
+        onChanged: onChanged,
+        cursorColor: _ink,
+        decoration: InputDecoration(
+          hintText: '搜索聊天',
+          hintStyle: const TextStyle(color: _muted, fontSize: 14),
+          prefixIcon: const Icon(Icons.search_rounded, color: _muted, size: 20),
+          filled: true,
+          fillColor: Colors.white,
+          isDense: true,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(22),
+            borderSide: BorderSide.none,
+          ),
+        ),
+        style: const TextStyle(
+          color: _ink,
+          fontSize: 14.5,
+          height: 1.25,
+          letterSpacing: 0,
+        ),
+      ),
+    );
+  }
+}
+
 class _SectionLabel extends StatelessWidget {
   const _SectionLabel(this.label);
 
@@ -995,34 +1121,45 @@ class _FloatingPillButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(23),
-      elevation: 8,
-      shadowColor: Colors.black.withValues(alpha: 0.12),
-      child: InkWell(
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white,
         borderRadius: BorderRadius.circular(23),
-        onTap: onTap,
-        child: SizedBox(
-          height: 46,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, color: _ink, size: 18),
-              const SizedBox(width: 7),
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _ink,
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w600,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.12),
+            blurRadius: 24,
+            spreadRadius: 1,
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(23),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(23),
+          onTap: onTap,
+          child: SizedBox(
+            height: 46,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, color: _ink, size: 18),
+                const SizedBox(width: 7),
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: _ink,
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -1043,15 +1180,26 @@ class _RoundShadowButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      shape: const CircleBorder(),
-      elevation: 8,
-      shadowColor: Colors.black.withValues(alpha: 0.12),
-      child: IconButton(
-        tooltip: tooltip,
-        icon: Icon(icon, color: _ink, size: 20),
-        onPressed: onTap,
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.12),
+            blurRadius: 24,
+            spreadRadius: 1,
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        shape: const CircleBorder(),
+        child: IconButton(
+          tooltip: tooltip,
+          icon: Icon(icon, color: _ink, size: 20),
+          onPressed: onTap,
+        ),
       ),
     );
   }
@@ -1105,7 +1253,7 @@ Future<String?> _showScaleMenu(
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.14),
                   blurRadius: 34,
-                  offset: const Offset(0, 14),
+                  spreadRadius: 1,
                 ),
               ],
             ),
@@ -1163,11 +1311,11 @@ Future<void> showModelChoiceSheet({
             color: Colors.white,
             borderRadius: BorderRadius.circular(24),
             boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.12),
-                blurRadius: 30,
-                offset: const Offset(0, 12),
-              ),
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.12),
+                  blurRadius: 30,
+                  spreadRadius: 1,
+                ),
             ],
           ),
           child: SafeArea(
