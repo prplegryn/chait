@@ -584,63 +584,21 @@ class AppStore extends ChangeNotifier {
     try {
       final target = _resolveModelTarget(session);
       final assistant = assistantForSession(session);
-      final shouldSearch = _shouldSearch(session, trimmed);
-      if (shouldSearch) {
-        assistantMessage.status = '搜索中';
-        notifyListeners();
-      }
-      final searchOutcome = await _searchContextFor(
-        session,
-        trimmed,
-        shouldSearch: shouldSearch,
+      final sentWithTools = await _trySendWithSearchTools(
+        session: session,
+        assistant: assistant,
+        assistantMessage: assistantMessage,
+        target: target,
       );
-      assistantMessage.status = '思考中';
-      notifyListeners();
-      final outboundMessages = [
-        ChatMessage(
-          id: newEntityId(),
-          role: 'system',
-          content: _runtimeSystemContext(),
-          createdAt: DateTime.now(),
-        ),
-        if (searchOutcome.context.isNotEmpty)
-          ChatMessage(
-            id: newEntityId(),
-            role: 'system',
-            content: searchOutcome.context,
-            createdAt: DateTime.now(),
-          ),
-        if (searchOutcome.error.isNotEmpty)
-          ChatMessage(
-            id: newEntityId(),
-            role: 'system',
-            content: searchOutcome.error,
-            createdAt: DateTime.now(),
-          ),
-        ...session.messages
-            .where((message) => !message.isStreaming)
-            .where((message) => message.content.trim().isNotEmpty),
-      ];
-      await _activeClient!.sendChat(
-        config: AiRequestConfig(
-          settings: settings,
-          apiKey: target.apiKey,
+      if (!sentWithTools) {
+        await _sendWithSearchFallback(
+          session: session,
+          prompt: trimmed,
           assistant: assistant,
-          messages: outboundMessages,
-          baseUrl: target.provider.baseUrl,
-          model: target.model.name,
-          customHeadersJson: target.provider.customHeadersJson,
-        ),
-        isCancelled: () => _cancelRequested,
-        onDelta: (delta) {
-          assistantMessage.status = '';
-          assistantMessage.content += delta;
-          notifyListeners();
-        },
-        onRaw: (raw) {
-          assistantMessage.raw = raw;
-        },
-      );
+          assistantMessage: assistantMessage,
+          target: target,
+        );
+      }
       if (_cancelRequested && assistantMessage.content.trim().isEmpty) {
         assistantMessage.content = '已停止生成。';
       }
@@ -1066,18 +1024,312 @@ class AppStore extends ChangeNotifier {
     try {
       final provider = searchProviderById(settings.defaultSearchProviderId);
       final client = SearchClient();
-      final results = await client.search(
+      final response = await client.searchDetailed(
         provider: provider,
         apiKey: apiKeyForSearchProvider(provider.id),
         query: prompt,
       );
-      return _SearchOutcome(context: client.formatResults(results));
+      return _SearchOutcome(context: client.formatContext(response));
     } catch (error) {
       return _SearchOutcome(
         error:
             '本轮尝试联网搜索但失败：${friendlyError(error)}。请不要编造实时资料；如果问题需要最新信息，请说明当前无法确认。',
       );
     }
+  }
+
+  Future<bool> _trySendWithSearchTools({
+    required ChatSession session,
+    required AssistantPreset assistant,
+    required ChatMessage assistantMessage,
+    required _ResolvedModelTarget target,
+  }) async {
+    if (!_hasUsableSearch(session) || target.model.supportsTools == false) {
+      return false;
+    }
+
+    final payloads = _baseChatPayloads(
+      assistant: assistant,
+      session: session,
+    );
+    final tools = [_webSearchToolDefinition()];
+    var toolRounds = 0;
+
+    while (!_cancelRequested) {
+      late final AiChatResult result;
+      try {
+        result = await _activeClient!.sendChat(
+          config: AiRequestConfig(
+            settings: settings,
+            apiKey: target.apiKey,
+            assistant: assistant,
+            messages: const <ChatMessage>[],
+            messagePayloads: payloads,
+            tools: tools,
+            baseUrl: target.provider.baseUrl,
+            model: target.model.name,
+            customHeadersJson: target.provider.customHeadersJson,
+          ),
+          isCancelled: () => _cancelRequested,
+          onToolCall: (_) {
+            assistantMessage.status = '搜索中';
+            notifyListeners();
+          },
+          onDelta: (delta) {
+            assistantMessage.status = '';
+            assistantMessage.content += delta;
+            notifyListeners();
+          },
+          onRaw: (raw) {
+            _appendRaw(assistantMessage, raw);
+          },
+        );
+      } catch (error) {
+        if (toolRounds == 0 &&
+            assistantMessage.content.trim().isEmpty &&
+            _looksLikeUnsupportedToolError(error)) {
+          return false;
+        }
+        rethrow;
+      }
+
+      if (result.toolCalls.isEmpty) {
+        return true;
+      }
+
+      payloads.add(_assistantToolCallPayload(result));
+      if (toolRounds >= 2) {
+        if (assistantMessage.content.trim().isEmpty) {
+          assistantMessage.content = '搜索调用过多，已停止继续调用。';
+        }
+        return true;
+      }
+
+      toolRounds += 1;
+      for (final call in result.toolCalls) {
+        if (_cancelRequested) {
+          return true;
+        }
+        assistantMessage.status =
+            call.name == 'search_web' ? '搜索中' : '处理中...';
+        notifyListeners();
+        final toolContent = call.name == 'search_web'
+            ? await _executeSearchTool(call)
+            : _unknownToolResult(call);
+        payloads.add({
+          'role': 'tool',
+          'tool_call_id': call.id,
+          'name': call.name,
+          'content': toolContent,
+        });
+      }
+      assistantMessage.status = '思考中';
+      notifyListeners();
+    }
+
+    return true;
+  }
+
+  Future<void> _sendWithSearchFallback({
+    required ChatSession session,
+    required String prompt,
+    required AssistantPreset assistant,
+    required ChatMessage assistantMessage,
+    required _ResolvedModelTarget target,
+  }) async {
+    final shouldSearch = _shouldSearch(session, prompt);
+    if (shouldSearch) {
+      assistantMessage.status = '搜索中';
+      notifyListeners();
+    }
+    final searchOutcome = await _searchContextFor(
+      session,
+      prompt,
+      shouldSearch: shouldSearch,
+    );
+    assistantMessage.status = '思考中';
+    notifyListeners();
+    final outboundMessages = [
+      ChatMessage(
+        id: newEntityId(),
+        role: 'system',
+        content: _runtimeSystemContext(),
+        createdAt: DateTime.now(),
+      ),
+      if (searchOutcome.context.isNotEmpty)
+        ChatMessage(
+          id: newEntityId(),
+          role: 'system',
+          content: searchOutcome.context,
+          createdAt: DateTime.now(),
+        ),
+      if (searchOutcome.error.isNotEmpty)
+        ChatMessage(
+          id: newEntityId(),
+          role: 'system',
+          content: searchOutcome.error,
+          createdAt: DateTime.now(),
+        ),
+      ...session.messages
+          .where((message) => !message.isStreaming)
+          .where((message) => message.content.trim().isNotEmpty),
+    ];
+    await _activeClient!.sendChat(
+      config: AiRequestConfig(
+        settings: settings,
+        apiKey: target.apiKey,
+        assistant: assistant,
+        messages: outboundMessages,
+        baseUrl: target.provider.baseUrl,
+        model: target.model.name,
+        customHeadersJson: target.provider.customHeadersJson,
+      ),
+      isCancelled: () => _cancelRequested,
+      onDelta: (delta) {
+        assistantMessage.status = '';
+        assistantMessage.content += delta;
+        notifyListeners();
+      },
+      onRaw: (raw) {
+        _appendRaw(assistantMessage, raw);
+      },
+    );
+  }
+
+  List<Map<String, Object?>> _baseChatPayloads({
+    required AssistantPreset assistant,
+    required ChatSession session,
+  }) {
+    return [
+      if (assistant.systemPrompt.trim().isNotEmpty)
+        {
+          'role': 'system',
+          'content': assistant.systemPrompt.trim(),
+        },
+      {
+        'role': 'system',
+        'content': _runtimeSystemContext(),
+      },
+      ...session.messages
+          .where((message) => !message.isStreaming)
+          .where((message) => message.content.trim().isNotEmpty)
+          .map(
+            (message) => {
+              'role': message.role,
+              'content': message.content,
+            },
+          ),
+    ];
+  }
+
+  AiToolDefinition _webSearchToolDefinition() {
+    final now = DateTime.now();
+    return AiToolDefinition(
+      name: 'search_web',
+      description: '''
+Search the web for current, verifiable, or specific information.
+Use this when the user asks for latest/current facts, news, prices, weather, schedules, source verification, or a concrete web page.
+Generate focused search keywords. Run more than one search only when the first results are not enough.
+Today is ${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}.
+
+When using results, cite the relevant sentence with [citation,domain](id). Use only ids returned by the tool.
+If the results are weak or unavailable, say that clearly instead of guessing.
+'''.trim(),
+      parameters: const {
+        'type': 'object',
+        'properties': {
+          'query': {
+            'type': 'string',
+            'description': 'Focused search query.',
+          },
+        },
+        'required': ['query'],
+      },
+    );
+  }
+
+  Future<String> _executeSearchTool(AiToolCall call) async {
+    final query = _queryFromToolArguments(call.arguments);
+    if (query.isEmpty) {
+      return _toolError('搜索参数缺少 query。');
+    }
+    try {
+      final provider = searchProviderById(settings.defaultSearchProviderId);
+      final client = SearchClient();
+      final response = await client.searchDetailed(
+        provider: provider,
+        apiKey: apiKeyForSearchProvider(provider.id),
+        query: query,
+      );
+      if (response.isEmpty) {
+        return _toolError('没有搜索结果。');
+      }
+      return client.formatToolResponse(response);
+    } catch (error) {
+      return _toolError(friendlyError(error));
+    }
+  }
+
+  Map<String, Object?> _assistantToolCallPayload(AiChatResult result) {
+    return {
+      'role': 'assistant',
+      'content': result.content,
+      'tool_calls': result.toolCalls.map((call) => call.toOpenAiJson()).toList(),
+    };
+  }
+
+  String _unknownToolResult(AiToolCall call) {
+    return _toolError('不支持的工具：${call.name}');
+  }
+
+  String _toolError(String message) {
+    return const JsonEncoder.withIndent('  ').convert({
+      'error': message,
+      'items': <Object>[],
+    });
+  }
+
+  String _queryFromToolArguments(String arguments) {
+    final trimmed = arguments.trim();
+    if (trimmed.isEmpty) {
+      return '';
+    }
+    try {
+      final decoded = jsonDecode(trimmed);
+      if (decoded is Map) {
+        for (final key in const ['query', 'q', 'keyword', 'keywords']) {
+          final value = decoded[key];
+          if (value is String && value.trim().isNotEmpty) {
+            return value.trim();
+          }
+        }
+      }
+    } catch (_) {
+      return trimmed;
+    }
+    return trimmed;
+  }
+
+  bool _looksLikeUnsupportedToolError(Object error) {
+    final text = error.toString().toLowerCase();
+    final mentionsTool = text.contains('tool') ||
+        text.contains('function_call') ||
+        text.contains('function calling') ||
+        text.contains('function');
+    final unsupported = text.contains('not support') ||
+        text.contains('unsupported') ||
+        text.contains('unknown parameter') ||
+        text.contains('invalid parameter') ||
+        text.contains('unrecognized') ||
+        text.contains('不支持');
+    return mentionsTool && unsupported;
+  }
+
+  void _appendRaw(ChatMessage message, String raw) {
+    if (raw.trim().isEmpty) {
+      return;
+    }
+    message.raw = message.raw.trim().isEmpty ? raw : '${message.raw}\n$raw';
   }
 
   bool _hasUsableSearch(ChatSession session) {

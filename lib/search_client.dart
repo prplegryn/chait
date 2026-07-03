@@ -15,6 +15,21 @@ class SearchResult {
   final String snippet;
 }
 
+class SearchResponse {
+  const SearchResponse({
+    this.answer = '',
+    this.items = const [],
+    this.images = const [],
+  });
+
+  final String answer;
+  final List<SearchResult> items;
+  final List<String> images;
+
+  bool get isEmpty =>
+      answer.trim().isEmpty && items.isEmpty && images.isEmpty;
+}
+
 class SearchClient {
   HttpClient? _client;
 
@@ -28,11 +43,24 @@ class SearchClient {
     required String apiKey,
     required String query,
   }) async {
+    return (await searchDetailed(
+      provider: provider,
+      apiKey: apiKey,
+      query: query,
+    ))
+        .items;
+  }
+
+  Future<SearchResponse> searchDetailed({
+    required SearchProviderConfig provider,
+    required String apiKey,
+    required String query,
+  }) async {
     final normalizedQuery = query.trim();
     if (!provider.enabled ||
         provider.baseUrl.trim().isEmpty ||
         normalizedQuery.isEmpty) {
-      return [];
+      return const SearchResponse();
     }
 
     _client = HttpClient();
@@ -64,14 +92,23 @@ class SearchClient {
   }
 
   String formatResults(List<SearchResult> results) {
-    if (results.isEmpty) {
+    return formatContext(SearchResponse(items: results));
+  }
+
+  String formatContext(SearchResponse response) {
+    if (response.isEmpty) {
       return '';
     }
     final buffer = StringBuffer(
       '以下是本轮联网搜索得到的资料。请只在相关时引用，不要编造来源；如果资料不足，说明不足。\n',
     );
-    for (var index = 0; index < results.length; index += 1) {
-      final item = results[index];
+    if (response.answer.trim().isNotEmpty) {
+      buffer
+        ..writeln('直接答案：${response.answer.trim()}')
+        ..writeln();
+    }
+    for (var index = 0; index < response.items.length; index += 1) {
+      final item = response.items[index];
       buffer
         ..writeln('${index + 1}. ${item.title}')
         ..writeln('   URL: ${item.url}')
@@ -80,7 +117,26 @@ class SearchClient {
     return buffer.toString().trim();
   }
 
-  Future<List<SearchResult>> _searchBrave(
+  String formatToolResponse(SearchResponse response) {
+    final items = <Map<String, Object?>>[];
+    for (var index = 0; index < response.items.length; index += 1) {
+      final item = response.items[index];
+      items.add({
+        'id': 's${index + 1}',
+        'index': index + 1,
+        'title': item.title,
+        'url': item.url,
+        'text': item.snippet,
+      });
+    }
+    return const JsonEncoder.withIndent('  ').convert({
+      if (response.answer.trim().isNotEmpty) 'answer': response.answer.trim(),
+      'items': items,
+      if (response.images.isNotEmpty) 'images': response.images,
+    });
+  }
+
+  Future<SearchResponse> _searchBrave(
     SearchProviderConfig provider,
     String apiKey,
     String query,
@@ -101,10 +157,10 @@ class SearchClient {
     final decoded = await _readJson(request);
     final web = decoded is Map ? decoded['web'] : null;
     final results = web is Map ? web['results'] : null;
-    return _parseResults(results);
+    return SearchResponse(items: _parseResults(results));
   }
 
-  Future<List<SearchResult>> _searchExa(
+  Future<SearchResponse> _searchExa(
     SearchProviderConfig provider,
     String apiKey,
     String query,
@@ -123,10 +179,12 @@ class SearchClient {
     _applyHeaders(request, provider.customHeadersJson);
     request.write(jsonEncode(body));
     final decoded = await _readJson(request);
-    return _parseResults(decoded is Map ? decoded['results'] : null);
+    return SearchResponse(
+      items: _parseResults(decoded is Map ? decoded['results'] : null),
+    );
   }
 
-  Future<List<SearchResult>> _searchSerper(
+  Future<SearchResponse> _searchSerper(
     SearchProviderConfig provider,
     String apiKey,
     String query,
@@ -145,14 +203,18 @@ class SearchClient {
     request.write(jsonEncode(body));
     final decoded = await _readJson(request);
     if (decoded is Map) {
-      return _parseResults(
-        decoded['organic'] ?? decoded['results'] ?? decoded['items'],
+      return SearchResponse(
+        answer: _serperAnswer(decoded),
+        items: _parseResults(
+          decoded['organic'] ?? decoded['results'] ?? decoded['items'],
+        ),
+        images: _parseImageUrls(decoded['images']),
       );
     }
-    return _parseResults(decoded);
+    return SearchResponse(items: _parseResults(decoded));
   }
 
-  Future<List<SearchResult>> _searchSearXng(
+  Future<SearchResponse> _searchSearXng(
     SearchProviderConfig provider,
     String query,
   ) async {
@@ -170,12 +232,15 @@ class SearchClient {
     _applyHeaders(request, provider.customHeadersJson);
     final decoded = await _readJson(request);
     if (decoded is Map) {
-      return _parseResults(decoded['results'] ?? decoded['items']);
+      return SearchResponse(
+        answer: _firstListString(decoded['answers']),
+        items: _parseResults(decoded['results'] ?? decoded['items']),
+      );
     }
-    return _parseResults(decoded);
+    return SearchResponse(items: _parseResults(decoded));
   }
 
-  Future<List<SearchResult>> _searchLinkUp(
+  Future<SearchResponse> _searchLinkUp(
     SearchProviderConfig provider,
     String apiKey,
     String query,
@@ -196,10 +261,12 @@ class SearchClient {
     _applyHeaders(request, provider.customHeadersJson);
     request.write(jsonEncode(body));
     final decoded = await _readJson(request);
-    return _parseResults(decoded is Map ? decoded['results'] : decoded);
+    return SearchResponse(
+      items: _parseResults(decoded is Map ? decoded['results'] : decoded),
+    );
   }
 
-  Future<List<SearchResult>> _searchTavily(
+  Future<SearchResponse> _searchTavily(
     SearchProviderConfig provider,
     String apiKey,
     String query,
@@ -208,7 +275,9 @@ class SearchClient {
       'api_key': apiKey.trim(),
       'query': query,
       'max_results': provider.maxResults,
-      'search_depth': 'basic',
+      'search_depth': 'advanced',
+      'include_answer': true,
+      'include_images': true,
       ..._decodeJsonObject(provider.extraBodyJson),
     };
     final request = await _client!.postUrl(_join(provider.baseUrl, '/search'));
@@ -216,10 +285,20 @@ class SearchClient {
     _applyHeaders(request, provider.customHeadersJson);
     request.write(jsonEncode(body));
     final decoded = await _readJson(request);
-    return _parseResults(decoded is Map ? decoded['results'] : decoded);
+    if (decoded is Map) {
+      return SearchResponse(
+        answer: _firstString(
+          Map<String, Object?>.from(decoded),
+          const ['answer'],
+        ),
+        items: _parseResults(decoded['results']),
+        images: _parseImageUrls(decoded['images']),
+      );
+    }
+    return SearchResponse(items: _parseResults(decoded));
   }
 
-  Future<List<SearchResult>> _searchCustom(
+  Future<SearchResponse> _searchCustom(
     SearchProviderConfig provider,
     String apiKey,
     String query,
@@ -238,11 +317,16 @@ class SearchClient {
     request.write(jsonEncode(body));
     final decoded = await _readJson(request);
     if (decoded is Map) {
-      return _parseResults(
-        decoded['results'] ?? decoded['data'] ?? decoded['items'],
+      final map = Map<String, Object?>.from(decoded);
+      return SearchResponse(
+        answer: _firstString(map, const ['answer', 'summary']),
+        items: _parseResults(
+          decoded['results'] ?? decoded['data'] ?? decoded['items'],
+        ),
+        images: _parseImageUrls(decoded['images']),
       );
     }
-    return _parseResults(decoded);
+    return SearchResponse(items: _parseResults(decoded));
   }
 
   Future<Object?> _readJson(HttpClientRequest request) async {
@@ -290,6 +374,61 @@ class SearchClient {
       }
     }
     return results;
+  }
+
+  List<String> _parseImageUrls(Object? value) {
+    if (value is! List) {
+      return const [];
+    }
+    final urls = <String>[];
+    for (final item in value) {
+      if (item is String && item.trim().isNotEmpty) {
+        urls.add(item.trim());
+        continue;
+      }
+      if (item is Map) {
+        final map = Map<String, Object?>.from(item);
+        final url = _firstString(
+          map,
+          const ['url', 'imageUrl', 'image_url', 'thumbnailUrl', 'thumbnail'],
+        );
+        if (url.isNotEmpty) {
+          urls.add(url);
+        }
+      }
+    }
+    return urls;
+  }
+
+  String _serperAnswer(Map<dynamic, dynamic> decoded) {
+    final map = Map<String, Object?>.from(decoded);
+    for (final key in const ['answerBox', 'knowledgeGraph']) {
+      final value = map[key];
+      if (value is! Map) {
+        continue;
+      }
+      final nested = Map<String, Object?>.from(value);
+      final text = _firstString(
+        nested,
+        const ['answer', 'snippet', 'description', 'title'],
+      );
+      if (text.isNotEmpty) {
+        return text;
+      }
+    }
+    return '';
+  }
+
+  String _firstListString(Object? value) {
+    if (value is! List) {
+      return '';
+    }
+    for (final item in value) {
+      if (item is String && item.trim().isNotEmpty) {
+        return item.trim();
+      }
+    }
+    return '';
   }
 
   Uri _join(String baseUrl, String path) {

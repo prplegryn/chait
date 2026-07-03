@@ -13,6 +13,8 @@ class AiRequestConfig {
     required this.baseUrl,
     required this.model,
     this.customHeadersJson = '{}',
+    this.messagePayloads,
+    this.tools = const [],
   });
 
   final AppSettings settings;
@@ -22,6 +24,62 @@ class AiRequestConfig {
   final String baseUrl;
   final String model;
   final String customHeadersJson;
+  final List<Map<String, Object?>>? messagePayloads;
+  final List<AiToolDefinition> tools;
+}
+
+class AiToolDefinition {
+  const AiToolDefinition({
+    required this.name,
+    required this.description,
+    required this.parameters,
+  });
+
+  final String name;
+  final String description;
+  final Map<String, Object?> parameters;
+
+  Map<String, Object?> toJson() => {
+        'type': 'function',
+        'function': {
+          'name': name,
+          'description': description,
+          'parameters': parameters,
+        },
+      };
+}
+
+class AiToolCall {
+  AiToolCall({
+    required this.id,
+    required this.name,
+    required this.arguments,
+  });
+
+  final String id;
+  final String name;
+  final String arguments;
+
+  Map<String, Object?> toOpenAiJson() => {
+        'id': id,
+        'type': 'function',
+        'function': {
+          'name': name,
+          'arguments': arguments,
+        },
+      };
+}
+
+class AiChatResult {
+  const AiChatResult({
+    required this.content,
+    required this.raw,
+    required this.toolCalls,
+  });
+
+  final String content;
+  final String raw;
+  final List<AiToolCall> toolCalls;
 }
 
 class AiClient {
@@ -32,11 +90,12 @@ class AiClient {
     _client = null;
   }
 
-  Future<void> sendChat({
+  Future<AiChatResult> sendChat({
     required AiRequestConfig config,
     required void Function(String delta) onDelta,
     required void Function(String raw) onRaw,
     required bool Function() isCancelled,
+    void Function(String toolName)? onToolCall,
   }) async {
     final baseUrl = config.baseUrl.trim();
     final model = config.model.trim();
@@ -50,32 +109,59 @@ class AiClient {
     final headers = _decodeJsonObject(config.customHeadersJson);
 
     _client = HttpClient();
-    final request = await _client!.postUrl(uri);
-    request.headers.contentType = ContentType.json;
-    request.headers.set(HttpHeaders.authorizationHeader,
-        'Bearer ${config.apiKey.trim()}');
-    for (final entry in headers.entries) {
-      request.headers.set(entry.key, entry.value.toString());
-    }
-    request.write(jsonEncode(body));
-
-    final response = await request.close().timeout(const Duration(seconds: 90));
-    final status = response.statusCode;
-
-    if (status < 200 || status >= 300) {
-      final errorBody = await response.transform(utf8.decoder).join();
-      throw AiException('请求失败 ($status)：${_compactError(errorBody)}');
-    }
-
-    if (config.settings.stream && body['stream'] == true) {
-      await _readStream(response, onDelta, onRaw, isCancelled);
-    } else {
-      final raw = await response.transform(utf8.decoder).join();
-      onRaw(raw);
-      final content = _extractFullContent(jsonDecode(raw));
-      if (content.trim().isNotEmpty) {
-        onDelta(content);
+    try {
+      final request = await _client!.postUrl(uri);
+      request.headers.contentType = ContentType.json;
+      request.headers.set(HttpHeaders.authorizationHeader,
+          'Bearer ${config.apiKey.trim()}');
+      for (final entry in headers.entries) {
+        request.headers.set(entry.key, entry.value.toString());
       }
+      request.write(jsonEncode(body));
+
+      final response =
+          await request.close().timeout(const Duration(seconds: 90));
+      final status = response.statusCode;
+
+      if (status < 200 || status >= 300) {
+        final errorBody = await response.transform(utf8.decoder).join();
+        throw AiException('请求失败 ($status)：${_compactError(errorBody)}');
+      }
+
+      if (config.settings.stream && body['stream'] == true) {
+        final result = await _readStream(
+          response,
+          onDelta,
+          onRaw,
+          isCancelled,
+          onToolCall,
+        );
+        return AiChatResult(
+          content: result.content,
+          raw: result.raw,
+          toolCalls: result.toolCalls,
+        );
+      } else {
+        final raw = await response.transform(utf8.decoder).join();
+        onRaw(raw);
+        final decoded = jsonDecode(raw);
+        final content = _extractFullContent(decoded);
+        final toolCalls = _extractToolCalls(decoded);
+        if (content.trim().isNotEmpty) {
+          onDelta(content);
+        }
+        if (toolCalls.isNotEmpty) {
+          onToolCall?.call(toolCalls.first.name);
+        }
+        return AiChatResult(
+          content: content,
+          raw: raw,
+          toolCalls: toolCalls,
+        );
+      }
+    } finally {
+      _client?.close();
+      _client = null;
     }
   }
 
@@ -303,20 +389,25 @@ class AiClient {
       'max_tokens': assistant.maxTokens ?? settings.maxTokens,
       'presence_penalty': settings.presencePenalty,
       'frequency_penalty': settings.frequencyPenalty,
-      'messages': [
-        if (assistant.systemPrompt.trim().isNotEmpty)
-          {
-            'role': 'system',
-            'content': assistant.systemPrompt.trim(),
-          },
-        ...config.messages.map(
-          (message) => {
-            'role': message.role,
-            'content': message.content,
-          },
-        ),
-      ],
+      'messages': config.messagePayloads ??
+          [
+            if (assistant.systemPrompt.trim().isNotEmpty)
+              {
+                'role': 'system',
+                'content': assistant.systemPrompt.trim(),
+              },
+            ...config.messages.map(
+              (message) => {
+                'role': message.role,
+                'content': message.content,
+              },
+            ),
+          ],
     };
+
+    if (config.tools.isNotEmpty) {
+      body['tools'] = config.tools.map((tool) => tool.toJson()).toList();
+    }
 
     final seed = int.tryParse(settings.seed.trim());
     if (seed != null) {
@@ -487,13 +578,17 @@ class AiClient {
     return keys.any(raw.containsKey);
   }
 
-  Future<void> _readStream(
+  Future<_StreamReadResult> _readStream(
     HttpClientResponse response,
     void Function(String delta) onDelta,
     void Function(String raw) onRaw,
     bool Function() isCancelled,
+    void Function(String toolName)? onToolCall,
   ) async {
     final rawBuffer = StringBuffer();
+    final contentBuffer = StringBuffer();
+    final toolAccumulator = _ToolCallAccumulator();
+    var toolNotified = false;
     await for (final line
         in response.transform(utf8.decoder).transform(const LineSplitter())) {
       if (isCancelled()) {
@@ -511,15 +606,28 @@ class AiClient {
         final decoded = jsonDecode(data);
         final delta = _extractDelta(decoded);
         if (delta.isNotEmpty) {
+          contentBuffer.write(delta);
           onDelta(delta);
+        }
+        final seenTool = toolAccumulator.addFromChunk(decoded);
+        if (seenTool && !toolNotified) {
+          toolNotified = true;
+          onToolCall?.call(toolAccumulator.firstToolName);
         }
       } catch (_) {
         if (data.isNotEmpty) {
+          contentBuffer.write(data);
           onDelta(data);
         }
       }
     }
-    onRaw(rawBuffer.toString());
+    final raw = rawBuffer.toString();
+    onRaw(raw);
+    return _StreamReadResult(
+      content: contentBuffer.toString(),
+      raw: raw,
+      toolCalls: toolAccumulator.toToolCalls(),
+    );
   }
 
   String _extractDelta(Object? decoded) {
@@ -586,6 +694,52 @@ class AiClient {
     }
 
     return _contentToText(decoded['content']);
+  }
+
+  List<AiToolCall> _extractToolCalls(Object? decoded) {
+    if (decoded is! Map) {
+      return const [];
+    }
+    final choices = decoded['choices'];
+    if (choices is! List || choices.isEmpty || choices.first is! Map) {
+      return const [];
+    }
+    final first = Map<String, Object?>.from(choices.first as Map);
+    final message = first['message'];
+    if (message is Map) {
+      return _toolCallsFromList(message['tool_calls']);
+    }
+    final delta = first['delta'];
+    if (delta is Map) {
+      return _toolCallsFromList(delta['tool_calls']);
+    }
+    return const [];
+  }
+
+  List<AiToolCall> _toolCallsFromList(Object? value) {
+    if (value is! List) {
+      return const [];
+    }
+    final calls = <AiToolCall>[];
+    for (var index = 0; index < value.length; index += 1) {
+      final item = value[index];
+      if (item is! Map) {
+        continue;
+      }
+      final map = Map<String, Object?>.from(item);
+      final function = _mapValue(map['function']);
+      final name = _contentToText(function['name']).trim();
+      final arguments = _contentToText(function['arguments']).trim();
+      if (name.isEmpty) {
+        continue;
+      }
+      var id = _contentToText(map['id']).trim();
+      if (id.isEmpty) {
+        id = 'call_$index';
+      }
+      calls.add(AiToolCall(id: id, name: name, arguments: arguments));
+    }
+    return calls;
   }
 
   String _extractBalance(Object? decoded, String jsonPath) {
@@ -858,4 +1012,128 @@ class AiException implements Exception {
 
   @override
   String toString() => message;
+}
+
+class _StreamReadResult {
+  const _StreamReadResult({
+    required this.content,
+    required this.raw,
+    required this.toolCalls,
+  });
+
+  final String content;
+  final String raw;
+  final List<AiToolCall> toolCalls;
+}
+
+class _ToolCallAccumulator {
+  final Map<int, _MutableToolCall> _calls = {};
+
+  String get firstToolName {
+    if (_calls.isEmpty) {
+      return '';
+    }
+    return _calls.values.first.name.trim();
+  }
+
+  bool addFromChunk(Object? decoded) {
+    if (decoded is! Map) {
+      return false;
+    }
+    final choices = decoded['choices'];
+    if (choices is! List || choices.isEmpty || choices.first is! Map) {
+      return false;
+    }
+    final first = Map<String, Object?>.from(choices.first as Map);
+    final delta = first['delta'];
+    if (delta is! Map) {
+      return false;
+    }
+    final toolCalls = delta['tool_calls'];
+    if (toolCalls is! List || toolCalls.isEmpty) {
+      return false;
+    }
+    for (var fallbackIndex = 0; fallbackIndex < toolCalls.length; fallbackIndex += 1) {
+      final item = toolCalls[fallbackIndex];
+      if (item is! Map) {
+        continue;
+      }
+      final map = Map<String, Object?>.from(item);
+      final index = _toInt(map['index']) ?? fallbackIndex;
+      final mutable = _calls.putIfAbsent(index, () => _MutableToolCall());
+      final id = _contentToText(map['id']).trim();
+      if (id.isNotEmpty) {
+        mutable.id = id;
+      }
+      final function = _mapValue(map['function']);
+      final name = _contentToText(function['name']);
+      if (name.isNotEmpty) {
+        mutable.name += name;
+      }
+      final arguments = _contentToText(function['arguments']);
+      if (arguments.isNotEmpty) {
+        mutable.arguments += arguments;
+      }
+    }
+    return true;
+  }
+
+  List<AiToolCall> toToolCalls() {
+    final entries = _calls.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    final calls = <AiToolCall>[];
+    for (final entry in entries) {
+      final call = entry.value;
+      if (call.name.trim().isEmpty) {
+        continue;
+      }
+      calls.add(
+        AiToolCall(
+          id: call.id.trim().isEmpty ? 'call_${entry.key}' : call.id.trim(),
+          name: call.name.trim(),
+          arguments: call.arguments.trim(),
+        ),
+      );
+    }
+    return calls;
+  }
+
+  int? _toInt(Object? value) {
+    if (value is int) {
+      return value;
+    }
+    if (value is double) {
+      return value.round();
+    }
+    if (value is String) {
+      return int.tryParse(value);
+    }
+    return null;
+  }
+
+  Map<String, Object?> _mapValue(Object? value) {
+    if (value is Map) {
+      return Map<String, Object?>.from(value);
+    }
+    return {};
+  }
+
+  String _contentToText(Object? content) {
+    if (content == null) {
+      return '';
+    }
+    if (content is String) {
+      return content;
+    }
+    if (content is num || content is bool) {
+      return content.toString();
+    }
+    return '';
+  }
+}
+
+class _MutableToolCall {
+  String id = '';
+  String name = '';
+  String arguments = '';
 }
