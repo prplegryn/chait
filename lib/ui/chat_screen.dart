@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 
 import '../app_store.dart';
@@ -211,7 +213,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   child: session.messages.isEmpty
                       ? Padding(
                           padding: EdgeInsets.only(
-                            top: MediaQuery.paddingOf(context).top + 96,
+                            top: MediaQuery.paddingOf(context).top + 132,
                             bottom: 108,
                           ),
                           child: _EmptyChat(assistant: assistant),
@@ -222,7 +224,7 @@ class _ChatScreenState extends State<ChatScreen> {
                               ScrollViewKeyboardDismissBehavior.onDrag,
                           padding: EdgeInsets.fromLTRB(
                             20,
-                            MediaQuery.paddingOf(context).top + 118,
+                            MediaQuery.paddingOf(context).top + 142,
                             20,
                             118,
                           ),
@@ -281,64 +283,96 @@ class _ImmersiveTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final top = MediaQuery.paddingOf(context).top;
-    final contentTop = (top - 26).clamp(0.0, 18.0).toDouble();
+    final contentTop = top + 15;
     final bg = _background(context);
     return Positioned(
       left: 0,
       right: 0,
       top: 0,
-      child: Container(
-        height: top + 116,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              bg,
-              bg.withValues(alpha: 0.98),
-              bg.withValues(alpha: 0.92),
-              bg.withValues(alpha: 0.74),
-              bg.withValues(alpha: 0.40),
-              bg.withValues(alpha: 0),
-            ],
-            stops: const [0, 0.34, 0.52, 0.70, 0.88, 1],
-          ),
-        ),
-        child: Padding(
-          padding: EdgeInsets.only(top: contentTop),
-          child: SizedBox(
-            height: 50,
-            child: Row(
-              children: [
-                const SizedBox(width: 8),
-                IconButton(
-                  tooltip: '打开侧边栏',
-                  icon: const Icon(Icons.menu_rounded, size: 24),
-                  onPressed: onOpenDrawer,
-                ),
-                Expanded(
-                  child: _ChatTitle(
-                    assistantName: assistantName,
-                    sessionTitle: sessionTitle,
+      child: SizedBox(
+        height: top + 136,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: ClipRect(
+                child: ShaderMask(
+                  blendMode: BlendMode.dstIn,
+                  shaderCallback: (bounds) {
+                    return const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black,
+                        Colors.black,
+                        Color(0xB0000000),
+                        Color(0x00000000),
+                      ],
+                      stops: [0, 0.48, 0.74, 1],
+                    ).createShader(bounds);
+                  },
+                  child: BackdropFilter(
+                    filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                    child: const ColoredBox(color: Colors.transparent),
                   ),
                 ),
-                AnimatedOpacity(
-                  opacity: showNewChat ? 1 : 0,
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeOutCubic,
-                  child: IgnorePointer(
-                    ignoring: !showNewChat,
-                    child: IconButton(
-                      tooltip: '新对话',
-                      icon: const Icon(Icons.edit_square, size: 21),
-                      onPressed: onNewChat,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-              ],
+              ),
             ),
-          ),
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      bg,
+                      bg.withValues(alpha: 0.99),
+                      bg.withValues(alpha: 0.94),
+                      bg.withValues(alpha: 0.78),
+                      bg.withValues(alpha: 0.44),
+                      bg.withValues(alpha: 0),
+                    ],
+                    stops: const [0, 0.32, 0.50, 0.68, 0.84, 1],
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: EdgeInsets.only(top: contentTop),
+              child: SizedBox(
+                height: 50,
+                child: Row(
+                  children: [
+                    const SizedBox(width: 8),
+                    IconButton(
+                      tooltip: '打开侧边栏',
+                      icon: const Icon(Icons.menu_rounded, size: 24),
+                      onPressed: onOpenDrawer,
+                    ),
+                    Expanded(
+                      child: _ChatTitle(
+                        assistantName: assistantName,
+                        sessionTitle: sessionTitle,
+                      ),
+                    ),
+                    AnimatedOpacity(
+                      opacity: showNewChat ? 1 : 0,
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOutCubic,
+                      child: IgnorePointer(
+                        ignoring: !showNewChat,
+                        child: IconButton(
+                          tooltip: '新对话',
+                          icon: const Icon(Icons.edit_square, size: 21),
+                          onPressed: onNewChat,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -461,7 +495,7 @@ class MessageBubble extends StatelessWidget {
     final waiting =
         !isUser && message.isStreaming && message.content.trim().isEmpty;
     return Padding(
-      padding: EdgeInsets.only(bottom: isUser ? 12 : 20),
+      padding: EdgeInsets.only(bottom: isUser ? 22 : 20),
       child: Column(
         crossAxisAlignment:
             isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
@@ -561,10 +595,7 @@ class _MessageContent extends StatelessWidget {
       return _StreamingTextContent(text: content, color: textColor);
     }
     final display = _formatForMarkdown(content);
-    return MarkdownBody(
-      data: display,
-      softLineBreak: true,
-      styleSheet: MarkdownStyleSheet(
+    final styleSheet = MarkdownStyleSheet(
         p: TextStyle(
           color: textColor,
           fontSize: 15.5,
@@ -586,7 +617,11 @@ class _MessageContent extends StatelessWidget {
           border: Border(left: BorderSide(color: muted, width: 3)),
         ),
         tableBorder: TableBorder.all(color: muted.withValues(alpha: 0.55)),
-      ),
+      );
+    return _MarkdownWithMath(
+      data: display,
+      textColor: textColor,
+      styleSheet: styleSheet,
     );
   }
 
@@ -608,6 +643,233 @@ class _MessageContent extends StatelessWidget {
     }
     return source;
   }
+}
+
+class _MarkdownWithMath extends StatelessWidget {
+  const _MarkdownWithMath({
+    required this.data,
+    required this.textColor,
+    required this.styleSheet,
+  });
+
+  final String data;
+  final Color textColor;
+  final MarkdownStyleSheet styleSheet;
+
+  @override
+  Widget build(BuildContext context) {
+    final segments = _splitMathSegments(data);
+    if (segments.length == 1 && !segments.first.isMath) {
+      return _markdown(data);
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: segments.map((segment) {
+        if (!segment.isMath) {
+          if (segment.text.trim().isEmpty) {
+            return const SizedBox.shrink();
+          }
+          return _markdown(segment.text);
+        }
+        return Padding(
+          padding: EdgeInsets.symmetric(vertical: segment.display ? 8 : 2),
+          child: Align(
+            alignment:
+                segment.display ? Alignment.center : Alignment.centerLeft,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Math.tex(
+                segment.text,
+                mathStyle:
+                    segment.display ? MathStyle.display : MathStyle.text,
+                textStyle: TextStyle(
+                  color: textColor,
+                  fontSize: segment.display ? 17 : 15.5,
+                ),
+                onErrorFallback: (_) => Text(
+                  segment.source,
+                  style: TextStyle(
+                    color: textColor,
+                    fontSize: 15.5,
+                    height: 1.48,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _markdown(String source) {
+    return MarkdownBody(
+      data: source,
+      softLineBreak: true,
+      styleSheet: styleSheet,
+    );
+  }
+}
+
+class _MathSegment {
+  const _MathSegment({
+    required this.text,
+    required this.source,
+    required this.isMath,
+    required this.display,
+  });
+
+  final String text;
+  final String source;
+  final bool isMath;
+  final bool display;
+}
+
+List<_MathSegment> _splitMathSegments(String source) {
+  final segments = <_MathSegment>[];
+  final buffer = StringBuffer();
+  var index = 0;
+
+  void flushText() {
+    if (buffer.isEmpty) {
+      return;
+    }
+    final text = buffer.toString();
+    segments.add(
+      _MathSegment(
+        text: text,
+        source: text,
+        isMath: false,
+        display: false,
+      ),
+    );
+    buffer.clear();
+  }
+
+  while (index < source.length) {
+    if (source.startsWith('```', index)) {
+      final end = source.indexOf('```', index + 3);
+      if (end == -1) {
+        buffer.write(source.substring(index));
+        break;
+      }
+      buffer.write(source.substring(index, end + 3));
+      index = end + 3;
+      continue;
+    }
+
+    if (source.startsWith(r'$$', index)) {
+      final end = source.indexOf(r'$$', index + 2);
+      if (end != -1) {
+        flushText();
+        final tex = source.substring(index + 2, end).trim();
+        segments.add(
+          _MathSegment(
+            text: tex,
+            source: source.substring(index, end + 2),
+            isMath: true,
+            display: true,
+          ),
+        );
+        index = end + 2;
+        continue;
+      }
+    }
+
+    if (source.startsWith(r'\[', index)) {
+      final end = source.indexOf(r'\]', index + 2);
+      if (end != -1) {
+        flushText();
+        final tex = source.substring(index + 2, end).trim();
+        segments.add(
+          _MathSegment(
+            text: tex,
+            source: source.substring(index, end + 2),
+            isMath: true,
+            display: true,
+          ),
+        );
+        index = end + 2;
+        continue;
+      }
+    }
+
+    if (source.startsWith(r'\(', index)) {
+      final end = source.indexOf(r'\)', index + 2);
+      if (end != -1) {
+        flushText();
+        final tex = source.substring(index + 2, end).trim();
+        segments.add(
+          _MathSegment(
+            text: tex,
+            source: source.substring(index, end + 2),
+            isMath: true,
+            display: false,
+          ),
+        );
+        index = end + 2;
+        continue;
+      }
+    }
+
+    if (source[index] == r'$' && !_isEscaped(source, index)) {
+      final end = _findClosingDollar(source, index + 1);
+      if (end != -1) {
+        final tex = source.substring(index + 1, end).trim();
+        if (_looksLikeMath(tex)) {
+          flushText();
+          segments.add(
+            _MathSegment(
+              text: tex,
+              source: source.substring(index, end + 1),
+              isMath: true,
+              display: false,
+            ),
+          );
+          index = end + 1;
+          continue;
+        }
+      }
+    }
+
+    buffer.write(source[index]);
+    index += 1;
+  }
+
+  flushText();
+  return segments;
+}
+
+int _findClosingDollar(String source, int start) {
+  for (var index = start; index < source.length; index += 1) {
+    if (source[index] == r'$' && !_isEscaped(source, index)) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+bool _isEscaped(String source, int index) {
+  var slashCount = 0;
+  var cursor = index - 1;
+  while (cursor >= 0 && source[cursor] == r'\') {
+    slashCount += 1;
+    cursor -= 1;
+  }
+  return slashCount.isOdd;
+}
+
+bool _looksLikeMath(String value) {
+  if (value.isEmpty || value.contains('\n')) {
+    return false;
+  }
+  return value.contains(r'\') ||
+      value.contains('^') ||
+      value.contains('_') ||
+      value.contains('{') ||
+      value.contains('}') ||
+      value.contains('=') ||
+      value.contains(r'\frac');
 }
 
 class _StreamingTextContent extends StatefulWidget {

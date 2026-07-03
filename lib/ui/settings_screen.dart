@@ -1786,6 +1786,7 @@ class _AppearancePageState extends State<AppearancePage> {
   late bool haptics;
   late String appearanceMode;
   late int themeColorValue;
+  late double fontScale;
 
   @override
   void initState() {
@@ -1794,12 +1795,14 @@ class _AppearancePageState extends State<AppearancePage> {
     haptics = settings.haptics;
     appearanceMode = settings.appearanceMode;
     themeColorValue = settings.themeColorValue;
+    fontScale = settings.fontScale.clamp(0.88, 1.18).toDouble();
   }
 
   Future<void> _save() async {
     final next = copySettings(widget.store.settings)
       ..appearanceMode = appearanceMode
       ..themeColorValue = themeColorValue
+      ..fontScale = fontScale
       ..haptics = haptics;
     await widget.store.updateSettings(next, widget.store.apiKey);
     if (!mounted) {
@@ -1854,6 +1857,26 @@ class _AppearancePageState extends State<AppearancePage> {
                 )
                 .toList(),
           ),
+          const SizedBox(height: 20),
+          _SettingLabel('字体大小'),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: const [
+              _FontScalePreset('小', 0.92),
+              _FontScalePreset('标准', 1),
+              _FontScalePreset('大', 1.08),
+              _FontScalePreset('特大', 1.16),
+            ]
+                .map(
+                  (preset) => _AppearancePill(
+                    label: preset.label,
+                    selected: (fontScale - preset.value).abs() < 0.01,
+                    onTap: () => setState(() => fontScale = preset.value),
+                  ),
+                )
+                .toList(),
+          ),
           const SizedBox(height: 18),
           SwitchListTile(
             value: haptics,
@@ -1866,6 +1889,13 @@ class _AppearancePageState extends State<AppearancePage> {
       ),
     );
   }
+}
+
+class _FontScalePreset {
+  const _FontScalePreset(this.label, this.value);
+
+  final String label;
+  final double value;
 }
 
 class _ThemeColorPreset {

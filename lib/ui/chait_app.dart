@@ -15,6 +15,7 @@ class ChaitApp extends StatelessWidget {
       builder: (context, _) {
         final mode = store.settings.appearanceMode;
         final color = Color(store.settings.themeColorValue);
+        final fontScale = store.settings.fontScale.clamp(0.88, 1.18);
         return MaterialApp(
           title: 'Chait',
           debugShowCheckedModeBanner: false,
@@ -29,6 +30,15 @@ class ChaitApp extends StatelessWidget {
             userBubble: color,
             oled: mode == 'oled',
           ),
+          builder: (context, child) {
+            final media = MediaQuery.of(context);
+            return MediaQuery(
+              data: media.copyWith(
+                textScaler: TextScaler.linear(fontScale.toDouble()),
+              ),
+              child: child ?? const SizedBox.shrink(),
+            );
+          },
           home: store.isReady ? ChatScreen(store: store) : const _LoadingScreen(),
         );
       },

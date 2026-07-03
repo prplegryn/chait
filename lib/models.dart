@@ -442,6 +442,7 @@ class AppSettings {
     this.extraBodyJson = '{}',
     this.appearanceMode = 'light',
     this.themeColorValue = 0xFFE9E9E9,
+    this.fontScale = 1,
     this.haptics = true,
   })  : providers = providers ?? [],
         models = models ?? [],
@@ -472,6 +473,7 @@ class AppSettings {
   String extraBodyJson;
   String appearanceMode;
   int themeColorValue;
+  double fontScale;
   bool haptics;
 
   Map<String, Object?> toJson() => {
@@ -500,6 +502,7 @@ class AppSettings {
         'extraBodyJson': extraBodyJson,
         'appearanceMode': appearanceMode,
         'themeColorValue': themeColorValue,
+        'fontScale': fontScale,
         'haptics': haptics,
       };
 
@@ -531,6 +534,7 @@ class AppSettings {
       extraBodyJson: json['extraBodyJson'] as String? ?? '{}',
       appearanceMode: json['appearanceMode'] as String? ?? 'light',
       themeColorValue: _toInt(json['themeColorValue']) ?? 0xFFE9E9E9,
+      fontScale: _toDouble(json['fontScale']) ?? 1,
       haptics: json['haptics'] as bool? ?? true,
     );
   }
