@@ -2258,7 +2258,7 @@ class _ModelMetadataTile extends StatelessWidget {
                     ? _textColor(context)
                     : null,
               ),
-              checkboxShape: RoundedRectangleBorder(
+              shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(5),
               ),
               onChanged: (next) => onChanged(next ?? false),
