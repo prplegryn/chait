@@ -281,7 +281,9 @@ class _ChatScreenState extends State<ChatScreen> {
       backgroundColor: _background(context),
       drawerScrimColor: Colors.black.withValues(alpha: 0.08),
       drawer: ChaitDrawer(store: widget.store),
-      body: Stack(
+      body: SizedBox.expand(
+        child: Stack(
+          fit: StackFit.expand,
           children: [
             _AssistantWallpaper(assistant: assistant),
             Positioned.fill(
@@ -348,6 +350,7 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
           ],
+        ),
       ),
     );
   }
@@ -415,7 +418,7 @@ class _AssistantWallpaper extends StatelessWidget {
   Widget build(BuildContext context) {
     final path = assistant.wallpaperImagePath.trim();
     if (path.isEmpty || !File(path).existsSync()) {
-      return const SizedBox.shrink();
+      return const Positioned.fill(child: SizedBox.shrink());
     }
     return Positioned.fill(
       child: Stack(
