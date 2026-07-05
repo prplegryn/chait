@@ -6,6 +6,7 @@ import 'package:flutter_background/flutter_background.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'app_logger.dart';
 import 'ai_client.dart';
 import 'mcp_client.dart';
 import 'models.dart';
@@ -66,44 +67,84 @@ class AppStore extends ChangeNotifier {
   }
 
   Future<void> load() async {
-    final prefs = await SharedPreferences.getInstance();
-    assistants
-      ..clear()
-      ..addAll(_decodeAssistantList(prefs.getString(_assistantsKey)));
-    if (assistants.isEmpty) {
-      assistants.addAll(defaultAssistants());
-    }
+    AppLogger.instance.info('store.load', 'start');
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      AppLogger.instance.info('store.load', 'prefs ready');
+      assistants
+        ..clear()
+        ..addAll(_decodeAssistantList(prefs.getString(_assistantsKey)));
+      if (assistants.isEmpty) {
+        assistants.addAll(defaultAssistants());
+      }
+      AppLogger.instance.event('store.load', {
+        'phase': 'assistants',
+        'count': assistants.length,
+      });
 
-    settings = _decodeSettings(prefs.getString(_settingsKey));
-    _ensureProviders();
-    apiKey = await _secureStorage.read(key: _apiKeyKey) ?? '';
-    final providerKeyJson = await _secureStorage.read(key: _providerApiKeysKey);
-    providerApiKeys
-      ..clear()
-      ..addAll(_decodeStringMap(providerKeyJson));
-    final searchProviderKeyJson =
-        await _secureStorage.read(key: _searchProviderApiKeysKey);
-    searchProviderApiKeys
-      ..clear()
-      ..addAll(_decodeStringMap(searchProviderKeyJson));
-    if (apiKey.isNotEmpty && providerApiKeys.isEmpty) {
-      providerApiKeys[settings.providers.first.id] = apiKey;
-    }
-    currentAssistantId =
-        prefs.getString(_currentAssistantKey) ?? assistants.first.id;
+      settings = _decodeSettings(prefs.getString(_settingsKey));
+      _ensureProviders();
+      AppLogger.instance.event('store.load', {
+        'phase': 'settings',
+        'providers': settings.providers.length,
+        'models': settings.models.length,
+        'enabledModels': settings.models.where((model) => model.enabled).length,
+        'searchProviders': settings.searchProviders.length,
+        'mcpServers': settings.mcpServers.length,
+        'defaultModel': settings.defaultModelId.isNotEmpty,
+        'titleModel': settings.titleModelId.isNotEmpty,
+      });
+      apiKey = await _secureStorage.read(key: _apiKeyKey) ?? '';
+      final providerKeyJson =
+          await _secureStorage.read(key: _providerApiKeysKey);
+      providerApiKeys
+        ..clear()
+        ..addAll(_decodeStringMap(providerKeyJson));
+      final searchProviderKeyJson =
+          await _secureStorage.read(key: _searchProviderApiKeysKey);
+      searchProviderApiKeys
+        ..clear()
+        ..addAll(_decodeStringMap(searchProviderKeyJson));
+      if (apiKey.isNotEmpty && providerApiKeys.isEmpty) {
+        providerApiKeys[settings.providers.first.id] = apiKey;
+      }
+      AppLogger.instance.event('store.load', {
+        'phase': 'secureStorage',
+        'legacyApiKey': apiKey.isNotEmpty,
+        'providerKeys': providerApiKeys.length,
+        'searchKeys': searchProviderApiKeys.length,
+      });
+      currentAssistantId =
+          prefs.getString(_currentAssistantKey) ?? assistants.first.id;
 
-    sessions
-      ..clear()
-      ..addAll(_decodeSessionList(prefs.getString(_sessionsKey)));
-    if (sessions.isEmpty) {
-      sessions.add(_newSession(currentAssistantId));
-    }
-    currentSessionId = prefs.getString(_currentSessionKey) ?? sessions.first.id;
+      sessions
+        ..clear()
+        ..addAll(_decodeSessionList(prefs.getString(_sessionsKey)));
+      if (sessions.isEmpty) {
+        sessions.add(_newSession(currentAssistantId));
+      }
+      currentSessionId =
+          prefs.getString(_currentSessionKey) ?? sessions.first.id;
+      AppLogger.instance.event('store.load', {
+        'phase': 'sessions',
+        'count': sessions.length,
+        'currentSession': currentSessionId,
+        'currentAssistant': currentAssistantId,
+      });
 
-    _repairSelection();
-    _sortSessions();
-    isReady = true;
-    notifyListeners();
+      _repairSelection();
+      _sortSessions();
+      isReady = true;
+      AppLogger.instance.event('store.load', {
+        'phase': 'ready',
+        'currentSessionMessages': currentSession.messages.length,
+        'currentAssistant': currentAssistant.id,
+      });
+      notifyListeners();
+    } catch (error, stack) {
+      AppLogger.instance.error('store.load', error, stack);
+      rethrow;
+    }
   }
 
   Future<void> save() async {

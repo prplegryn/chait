@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../app_logger.dart';
 import '../app_store.dart';
 import '../models.dart';
 import 'message_renderer.dart';
@@ -33,6 +34,21 @@ Color _onUserBubbleColor(BuildContext context) {
   return color.computeLuminance() > 0.54 ? _ink : Colors.white;
 }
 
+String _fmtSize(Size value) {
+  return '${value.width.toStringAsFixed(1)}x${value.height.toStringAsFixed(1)}';
+}
+
+String _fmtOffset(Offset value) {
+  return '${value.dx.toStringAsFixed(1)},${value.dy.toStringAsFixed(1)}';
+}
+
+String _fmtInsets(EdgeInsets value) {
+  return '${value.left.toStringAsFixed(1)},'
+      '${value.top.toStringAsFixed(1)},'
+      '${value.right.toStringAsFixed(1)},'
+      '${value.bottom.toStringAsFixed(1)}';
+}
+
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key, required this.store});
 
@@ -44,6 +60,10 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
+  final _topBarKey = GlobalKey(debugLabel: 'topBar');
+  final _composerKey = GlobalKey(debugLabel: 'composer');
+  final _textFieldKey = GlobalKey(debugLabel: 'textField');
+  final _emptyChatKey = GlobalKey(debugLabel: 'emptyChat');
   final _inputController = TextEditingController();
   final _scrollController = ScrollController();
   final _focusNode = FocusNode();
@@ -54,6 +74,14 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    AppLogger.instance.event('chat.ui', {
+      'event': 'init',
+      'session': widget.store.currentSessionId,
+      'messages': widget.store.currentSession.messages.length,
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _logSurfaceState('firstFrame');
+    });
     widget.store.addListener(_onStoreChanged);
     _scrollController.addListener(_onScroll);
     _lastSessionId = widget.store.currentSessionId;
@@ -77,6 +105,11 @@ class _ChatScreenState extends State<ChatScreen> {
     if (sessionChanged) {
       _lastSessionId = widget.store.currentSessionId;
       _forceNextScroll = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _logSurfaceState('sessionChanged');
+        }
+      });
     }
     final shouldScroll = _forceNextScroll || _stickToBottom;
     setState(() {});
@@ -113,6 +146,46 @@ class _ChatScreenState extends State<ChatScreen> {
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOutCubic,
     );
+  }
+
+  void _logSurfaceState(String phase) {
+    if (!mounted) {
+      return;
+    }
+    final media = MediaQuery.of(context);
+    AppLogger.instance.event('surface', {
+      'phase': phase,
+      'size': _fmtSize(media.size),
+      'padding': _fmtInsets(media.padding),
+      'viewInsets': _fmtInsets(media.viewInsets),
+      'textScale': media.textScaler.scale(1).toStringAsFixed(2),
+      'focus': _focusNode.hasFocus,
+      'keyboard': media.viewInsets.bottom > 0,
+      'messages': widget.store.currentSession.messages.length,
+    });
+    _logBox('topBar', _topBarKey);
+    _logBox('composer', _composerKey);
+    _logBox('textField', _textFieldKey);
+    _logBox('emptyChat', _emptyChatKey);
+  }
+
+  void _logBox(String name, GlobalKey key) {
+    final keyContext = key.currentContext;
+    if (keyContext == null) {
+      AppLogger.instance.info('surface', '$name missing');
+      return;
+    }
+    final render = keyContext.findRenderObject();
+    if (render is! RenderBox || !render.hasSize) {
+      AppLogger.instance.info('surface', '$name no-size');
+      return;
+    }
+    final offset = render.localToGlobal(Offset.zero);
+    AppLogger.instance.event('surface', {
+      'box': name,
+      'offset': _fmtOffset(offset),
+      'size': _fmtSize(render.size),
+    });
   }
 
   Future<void> _send() async {
@@ -224,7 +297,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           padding: EdgeInsets.only(
                             top: MediaQuery.paddingOf(context).top + 116,
                           ),
-                          child: _EmptyChat(assistant: assistant),
+                          child: _EmptyChat(key: _emptyChatKey),
                         )
                       : ListView.builder(
                           controller: _scrollController,
@@ -249,6 +322,7 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
             _ImmersiveTopBar(
+              key: _topBarKey,
               assistant: assistant,
               sessionTitle: session.title,
               showSessionTitle: widget.store.settings.showSessionTitle,
@@ -262,8 +336,11 @@ class _ChatScreenState extends State<ChatScreen> {
               right: 0,
               bottom: 0,
               child: Composer(
+                key: _composerKey,
                 controller: _inputController,
                 focusNode: _focusNode,
+                textFieldKey: _textFieldKey,
+                onSurfaceProbe: () => _logSurfaceState('composerProbe'),
                 isSending: widget.store.isSending,
                 onSend: _send,
                 onStop: widget.store.stopGeneration,
@@ -358,6 +435,7 @@ class _AssistantWallpaper extends StatelessWidget {
 
 class _ImmersiveTopBar extends StatelessWidget {
   const _ImmersiveTopBar({
+    super.key,
     required this.assistant,
     required this.sessionTitle,
     required this.showSessionTitle,
@@ -588,9 +666,7 @@ class _TitleAvatar extends StatelessWidget {
 }
 
 class _EmptyChat extends StatelessWidget {
-  const _EmptyChat({required this.assistant});
-
-  final AssistantPreset assistant;
+  const _EmptyChat({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -607,74 +683,7 @@ class _EmptyChat extends StatelessWidget {
           stops: const [0, 0.58, 1],
         ),
       ),
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 40),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _WelcomeAvatar(assistant: assistant),
-              const SizedBox(height: 14),
-              Text(
-                assistant.name,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: _textColor(context),
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  height: 1.2,
-                ),
-              ),
-              if (assistant.description.trim().isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(
-                  assistant.description.trim(),
-                  textAlign: TextAlign.center,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: _mutedColor(context),
-                    fontSize: 14,
-                    height: 1.45,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _WelcomeAvatar extends StatelessWidget {
-  const _WelcomeAvatar({required this.assistant});
-
-  final AssistantPreset assistant;
-
-  @override
-  Widget build(BuildContext context) {
-    final path = assistant.avatarImagePath.trim();
-    final hasImage = path.isNotEmpty && File(path).existsSync();
-    return Container(
-      width: 42,
-      height: 42,
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: _softColor(context),
-      ),
-      alignment: Alignment.center,
-      child: hasImage
-          ? Image.file(File(path), fit: BoxFit.cover)
-          : Text(
-              _avatarText(assistant),
-              style: TextStyle(
-                color: _textColor(context),
-                fontSize: 17,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+      child: const SizedBox.expand(),
     );
   }
 }
@@ -1182,6 +1191,8 @@ class Composer extends StatefulWidget {
     super.key,
     required this.controller,
     required this.focusNode,
+    required this.textFieldKey,
+    required this.onSurfaceProbe,
     required this.isSending,
     required this.onSend,
     required this.onStop,
@@ -1190,6 +1201,8 @@ class Composer extends StatefulWidget {
 
   final TextEditingController controller;
   final FocusNode focusNode;
+  final GlobalKey textFieldKey;
+  final VoidCallback onSurfaceProbe;
   final bool isSending;
   final VoidCallback onSend;
   final VoidCallback onStop;
@@ -1206,104 +1219,142 @@ class _ComposerState extends State<Composer> {
   void initState() {
     super.initState();
     widget.controller.addListener(_onTextChanged);
+    widget.focusNode.addListener(_onFocusChanged);
   }
 
   @override
   void dispose() {
+    widget.focusNode.removeListener(_onFocusChanged);
     widget.controller.removeListener(_onTextChanged);
     super.dispose();
   }
 
   void _onTextChanged() => setState(() {});
 
+  void _onFocusChanged() {
+    AppLogger.instance.event('composer', {
+      'event': 'focus',
+      'focused': widget.focusNode.hasFocus,
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      widget.onSurfaceProbe();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final sendColor = _textColor(context);
     return SafeArea(
       top: false,
-      child: Container(
-        color: Colors.transparent,
-        padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 190),
-          curve: Curves.easeOutCubic,
-          constraints: const BoxConstraints(minHeight: 48, maxHeight: 154),
-          padding: const EdgeInsets.fromLTRB(5, 4, 5, 4),
-          decoration: BoxDecoration(
-            color: _surface(context),
-            borderRadius: BorderRadius.circular(26),
-            boxShadow: [
-              BoxShadow(
-                color: _shadowColor(context, 0.10),
-                blurRadius: 24,
-                spreadRadius: 1,
-              ),
-            ],
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              IconButton(
-                tooltip: '添加',
-                visualDensity: VisualDensity.compact,
-                icon: Icon(
-                  Icons.add_rounded,
-                  color: _mutedColor(context),
-                  size: 24,
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (event) {
+          AppLogger.instance.event('composer', {
+            'event': 'pointerDown',
+            'position': _fmtOffset(event.position),
+          });
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            widget.onSurfaceProbe();
+          });
+        },
+        child: Container(
+          color: Colors.transparent,
+          padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 190),
+            curve: Curves.easeOutCubic,
+            constraints: const BoxConstraints(minHeight: 48, maxHeight: 154),
+            padding: const EdgeInsets.fromLTRB(5, 4, 5, 4),
+            decoration: BoxDecoration(
+              color: _surface(context),
+              borderRadius: BorderRadius.circular(26),
+              boxShadow: [
+                BoxShadow(
+                  color: _shadowColor(context, 0.10),
+                  blurRadius: 24,
+                  spreadRadius: 1,
                 ),
-                onPressed: widget.onOpenMenu,
-              ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 7),
-                  child: TextField(
-                    controller: widget.controller,
-                    focusNode: widget.focusNode,
-                    minLines: 1,
-                    maxLines: 6,
-                    textInputAction: TextInputAction.newline,
-                    cursorColor: sendColor,
-                    decoration: InputDecoration(
-                      isDense: true,
-                      border: InputBorder.none,
-                      hintText: '问点什么…',
-                      hintStyle: TextStyle(
-                        color: _mutedColor(context),
-                        fontSize: 15.5,
+              ],
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                IconButton(
+                  tooltip: '添加',
+                  visualDensity: VisualDensity.compact,
+                  icon: Icon(
+                    Icons.add_rounded,
+                    color: _mutedColor(context),
+                    size: 24,
+                  ),
+                  onPressed: widget.onOpenMenu,
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 7),
+                    child: TextField(
+                      key: widget.textFieldKey,
+                      controller: widget.controller,
+                      focusNode: widget.focusNode,
+                      minLines: 1,
+                      maxLines: 6,
+                      textInputAction: TextInputAction.newline,
+                      cursorColor: sendColor,
+                      onTap: () {
+                        AppLogger.instance.info('composer', 'textField tap');
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          widget.onSurfaceProbe();
+                        });
+                      },
+                      onTapOutside: (_) {
+                        AppLogger.instance.info('composer', 'textField tapOutside');
+                        widget.focusNode.unfocus();
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          widget.onSurfaceProbe();
+                        });
+                      },
+                      decoration: InputDecoration(
+                        isDense: true,
+                        border: InputBorder.none,
+                        hintText: '问点什么…',
+                        hintStyle: TextStyle(
+                          color: _mutedColor(context),
+                          fontSize: 15.5,
+                        ),
                       ),
-                    ),
-                    style: TextStyle(
-                      color: sendColor,
-                      fontSize: 15.5,
-                      height: 1.35,
-                      letterSpacing: 0,
+                      style: TextStyle(
+                        color: sendColor,
+                        fontSize: 15.5,
+                        height: 1.35,
+                        letterSpacing: 0,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 4),
-              IconButton(
-                tooltip: widget.isSending ? '停止' : '发送',
-                visualDensity: VisualDensity.compact,
-                style: IconButton.styleFrom(
-                  backgroundColor: widget.isSending || hasText
-                      ? sendColor
-                      : _softColor(context),
-                  foregroundColor: _background(context),
-                  disabledForegroundColor: _mutedColor(context),
-                  fixedSize: const Size(36, 36),
+                const SizedBox(width: 4),
+                IconButton(
+                  tooltip: widget.isSending ? '停止' : '发送',
+                  visualDensity: VisualDensity.compact,
+                  style: IconButton.styleFrom(
+                    backgroundColor: widget.isSending || hasText
+                        ? sendColor
+                        : _softColor(context),
+                    foregroundColor: _background(context),
+                    disabledForegroundColor: _mutedColor(context),
+                    fixedSize: const Size(36, 36),
+                  ),
+                  icon: Icon(
+                    widget.isSending ? Icons.stop_rounded : Icons.arrow_upward,
+                    size: 19,
+                  ),
+                  onPressed: widget.isSending
+                      ? widget.onStop
+                      : hasText
+                          ? widget.onSend
+                          : null,
                 ),
-                icon: Icon(
-                  widget.isSending ? Icons.stop_rounded : Icons.arrow_upward,
-                  size: 19,
-                ),
-                onPressed: widget.isSending
-                    ? widget.onStop
-                    : hasText
-                        ? widget.onSend
-                        : null,
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
