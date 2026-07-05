@@ -7,6 +7,8 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:markdown/markdown.dart' as md;
 
+import '../models.dart';
+
 class MessageRenderer extends StatelessWidget {
   const MessageRenderer({
     super.key,
