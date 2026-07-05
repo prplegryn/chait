@@ -7,13 +7,15 @@ import 'app_logger.dart';
 import 'app_store.dart';
 import 'ui/chait_app.dart';
 
+const _buildSha = String.fromEnvironment('GIT_SHA', defaultValue: 'dev');
+
 Future<void> main() async {
   await runZonedGuarded<Future<void>>(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
       await AppLogger.instance.start();
       _installErrorLogging();
-      AppLogger.instance.info('main', 'runApp');
+      AppLogger.instance.info('main', 'runApp build=$_buildSha');
       runApp(const ChaitBootstrap());
     },
     (error, stack) {

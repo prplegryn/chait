@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
 import '../app_logger.dart';
@@ -34,6 +35,21 @@ Color _onUserBubbleColor(BuildContext context) {
   return color.computeLuminance() > 0.54 ? _ink : Colors.white;
 }
 
+String _fmtSize(Size value) {
+  return '${value.width.toStringAsFixed(1)}x${value.height.toStringAsFixed(1)}';
+}
+
+String _fmtOffset(Offset value) {
+  return '${value.dx.toStringAsFixed(1)},${value.dy.toStringAsFixed(1)}';
+}
+
+String _fmtInsets(EdgeInsets value) {
+  return '${value.left.toStringAsFixed(1)},'
+      '${value.top.toStringAsFixed(1)},'
+      '${value.right.toStringAsFixed(1)},'
+      '${value.bottom.toStringAsFixed(1)}';
+}
+
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key, required this.store});
 
@@ -45,6 +61,10 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
+  final _topBarKey = GlobalKey(debugLabel: 'topBar');
+  final _composerKey = GlobalKey(debugLabel: 'composer');
+  final _textFieldKey = GlobalKey(debugLabel: 'textField');
+  final _emptyChatKey = GlobalKey(debugLabel: 'emptyChat');
   final _inputController = TextEditingController();
   final _scrollController = ScrollController();
   final _focusNode = FocusNode();
@@ -61,6 +81,9 @@ class _ChatScreenState extends State<ChatScreen> {
       'init session=${widget.store.currentSessionId} '
           'messages=${widget.store.currentSession.messages.length}',
     );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _logSurfaceState('firstFrame');
+    });
     widget.store.addListener(_onStoreChanged);
     _scrollController.addListener(_onScroll);
     _lastSessionId = widget.store.currentSessionId;
@@ -90,6 +113,11 @@ class _ChatScreenState extends State<ChatScreen> {
             'messages=${widget.store.currentSession.messages.length}',
       );
       _forceNextScroll = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _logSurfaceState('sessionFrame');
+        }
+      });
     }
     final shouldScroll = _forceNextScroll || _stickToBottom;
     setState(() {});
@@ -125,6 +153,44 @@ class _ChatScreenState extends State<ChatScreen> {
       _scrollController.position.maxScrollExtent,
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _logSurfaceState(String phase) {
+    if (!mounted) {
+      return;
+    }
+    final media = MediaQuery.of(context);
+    AppLogger.instance.info(
+      'surface',
+      '$phase size=${_fmtSize(media.size)} '
+          'padding=${_fmtInsets(media.padding)} '
+          'viewInsets=${_fmtInsets(media.viewInsets)} '
+          'textScale=${media.textScaler.scale(1).toStringAsFixed(2)} '
+          'focus=${_focusNode.hasFocus} '
+          'keyboard=${media.viewInsets.bottom > 0}',
+    );
+    _logBox('topBar', _topBarKey);
+    _logBox('composer', _composerKey);
+    _logBox('textField', _textFieldKey);
+    _logBox('emptyChat', _emptyChatKey);
+  }
+
+  void _logBox(String name, GlobalKey key) {
+    final keyContext = key.currentContext;
+    if (keyContext == null) {
+      AppLogger.instance.info('surface', '$name missing');
+      return;
+    }
+    final render = keyContext.findRenderObject();
+    if (render is! RenderBox || !render.hasSize) {
+      AppLogger.instance.info('surface', '$name no-size');
+      return;
+    }
+    final offset = render.localToGlobal(Offset.zero);
+    AppLogger.instance.info(
+      'surface',
+      '$name offset=${_fmtOffset(offset)} size=${_fmtSize(render.size)}',
     );
   }
 
@@ -230,70 +296,78 @@ class _ChatScreenState extends State<ChatScreen> {
       drawerScrimColor: Colors.black.withValues(alpha: 0.08),
       drawer: ChaitDrawer(store: widget.store),
       body: Stack(
-          children: [
-            _AssistantWallpaper(assistant: assistant),
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
-                child: SafeArea(
-                  top: false,
-                  bottom: false,
-                  child: session.messages.isEmpty
-                      ? Padding(
-                          padding: EdgeInsets.only(
-                            top: MediaQuery.paddingOf(context).top + 116,
-                            bottom: 108,
-                          ),
-                          child: _EmptyChat(
-                            startupError: widget.store.startupError,
-                          ),
-                        )
-                      : ListView.builder(
-                          controller: _scrollController,
-                          keyboardDismissBehavior:
-                              ScrollViewKeyboardDismissBehavior.onDrag,
-                          padding: EdgeInsets.fromLTRB(
-                            20,
-                            MediaQuery.paddingOf(context).top + 130,
-                            20,
-                            118,
-                          ),
-                          itemCount: session.messages.length,
-                          itemBuilder: (context, index) {
-                            return MessageBubble(
-                              key: ValueKey(session.messages[index].id),
-                              message: session.messages[index],
-                              onRegenerate: widget.store.regenerateLastAnswer,
-                            );
-                          },
+        children: [
+          _AssistantWallpaper(assistant: assistant),
+          Positioned.fill(
+            bottom: 92,
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: () {
+                AppLogger.instance.info('chat.ui', 'blank area tapped');
+                FocusManager.instance.primaryFocus?.unfocus();
+              },
+              child: SafeArea(
+                top: false,
+                bottom: false,
+                child: session.messages.isEmpty
+                    ? Padding(
+                        padding: EdgeInsets.only(
+                          top: MediaQuery.paddingOf(context).top + 116,
                         ),
-                ),
+                        child: _EmptyChat(
+                          key: _emptyChatKey,
+                          startupError: widget.store.startupError,
+                        ),
+                      )
+                    : ListView.builder(
+                        controller: _scrollController,
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.onDrag,
+                        padding: EdgeInsets.fromLTRB(
+                          20,
+                          MediaQuery.paddingOf(context).top + 130,
+                          20,
+                          118,
+                        ),
+                        itemCount: session.messages.length,
+                        itemBuilder: (context, index) {
+                          return MessageBubble(
+                            key: ValueKey(session.messages[index].id),
+                            message: session.messages[index],
+                            onRegenerate: widget.store.regenerateLastAnswer,
+                          );
+                        },
+                      ),
               ),
             ),
-            _ImmersiveTopBar(
-              assistant: assistant,
-              sessionTitle: session.title,
-              showSessionTitle: widget.store.settings.showSessionTitle,
-              showNewChat: session.messages.isNotEmpty,
-              onOpenDrawer: () => _scaffoldKey.currentState?.openDrawer(),
-              onNewChat: () => widget.store.createSession(),
-              onRenameTitle: _renameCurrentSession,
+          ),
+          _ImmersiveTopBar(
+            key: _topBarKey,
+            assistant: assistant,
+            sessionTitle: session.title,
+            showSessionTitle: widget.store.settings.showSessionTitle,
+            showNewChat: session.messages.isNotEmpty,
+            onOpenDrawer: () => _scaffoldKey.currentState?.openDrawer(),
+            onNewChat: () => widget.store.createSession(),
+            onRenameTitle: _renameCurrentSession,
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Composer(
+              key: _composerKey,
+              controller: _inputController,
+              focusNode: _focusNode,
+              textFieldKey: _textFieldKey,
+              onSurfaceProbe: () => _logSurfaceState('composerProbe'),
+              isSending: widget.store.isSending,
+              onSend: _send,
+              onStop: widget.store.stopGeneration,
+              onOpenMenu: _openComposerMenu,
             ),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: Composer(
-                controller: _inputController,
-                focusNode: _focusNode,
-                isSending: widget.store.isSending,
-                onSend: _send,
-                onStop: widget.store.stopGeneration,
-                onOpenMenu: _openComposerMenu,
-              ),
-            ),
-          ],
+          ),
+        ],
       ),
     );
   }
@@ -381,6 +455,7 @@ class _AssistantWallpaper extends StatelessWidget {
 
 class _ImmersiveTopBar extends StatelessWidget {
   const _ImmersiveTopBar({
+    super.key,
     required this.assistant,
     required this.sessionTitle,
     required this.showSessionTitle,
@@ -611,7 +686,7 @@ class _TitleAvatar extends StatelessWidget {
 }
 
 class _EmptyChat extends StatelessWidget {
-  const _EmptyChat({required this.startupError});
+  const _EmptyChat({super.key, required this.startupError});
 
   final String startupError;
 
@@ -1152,6 +1227,8 @@ class Composer extends StatefulWidget {
     super.key,
     required this.controller,
     required this.focusNode,
+    required this.textFieldKey,
+    required this.onSurfaceProbe,
     required this.isSending,
     required this.onSend,
     required this.onStop,
@@ -1160,6 +1237,8 @@ class Composer extends StatefulWidget {
 
   final TextEditingController controller;
   final FocusNode focusNode;
+  final GlobalKey textFieldKey;
+  final VoidCallback onSurfaceProbe;
   final bool isSending;
   final VoidCallback onSend;
   final VoidCallback onStop;
@@ -1176,22 +1255,44 @@ class _ComposerState extends State<Composer> {
   void initState() {
     super.initState();
     widget.controller.addListener(_onTextChanged);
+    widget.focusNode.addListener(_onFocusChanged);
   }
 
   @override
   void dispose() {
+    widget.focusNode.removeListener(_onFocusChanged);
     widget.controller.removeListener(_onTextChanged);
     super.dispose();
   }
 
   void _onTextChanged() => setState(() {});
 
+  void _onFocusChanged() {
+    AppLogger.instance.info(
+      'composer',
+      'focus=${widget.focusNode.hasFocus}',
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      widget.onSurfaceProbe();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final sendColor = _textColor(context);
     return SafeArea(
       top: false,
-      child: Container(
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (event) {
+          AppLogger.instance.info(
+            'composer',
+            'pointerDown global=${_fmtOffset(event.position)} '
+                'local=${_fmtOffset(event.localPosition)}',
+          );
+          widget.onSurfaceProbe();
+        },
+        child: Container(
         color: Colors.transparent,
         padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
         child: AnimatedContainer(
@@ -1227,8 +1328,23 @@ class _ComposerState extends State<Composer> {
                 child: Padding(
                   padding: const EdgeInsets.only(bottom: 7),
                   child: TextField(
+                    key: widget.textFieldKey,
                     controller: widget.controller,
                     focusNode: widget.focusNode,
+                    onTap: () {
+                      AppLogger.instance.info('composer', 'textfield tapped');
+                      widget.focusNode.requestFocus();
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        widget.onSurfaceProbe();
+                      });
+                    },
+                    onTapOutside: (_) {
+                      AppLogger.instance.info('composer', 'tap outside');
+                      widget.focusNode.unfocus();
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        widget.onSurfaceProbe();
+                      });
+                    },
                     minLines: 1,
                     maxLines: 6,
                     textInputAction: TextInputAction.newline,
@@ -1276,6 +1392,7 @@ class _ComposerState extends State<Composer> {
             ],
           ),
         ),
+      ),
       ),
     );
   }

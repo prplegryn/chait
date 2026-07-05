@@ -43,7 +43,7 @@ class AppLogger {
       return;
     }
     _started = true;
-    _fileName = 'chait-${_stampForFile(DateTime.now())}.log';
+    _fileName = 'chait-${_stampForFile(DateTime.now())}.log.txt';
     try {
       final dir = await _resolvePrivateLogDirectory();
       await dir.create(recursive: true);
@@ -191,7 +191,8 @@ class AppLogger {
       final logs = dir
           .listSync()
           .whereType<File>()
-          .where((file) => file.path.endsWith('.log'))
+          .where((file) =>
+              file.path.endsWith('.log') || file.path.endsWith('.log.txt'))
           .toList()
         ..sort((a, b) => b.statSync().modified.compareTo(a.statSync().modified));
       for (final file in logs.skip(12)) {
