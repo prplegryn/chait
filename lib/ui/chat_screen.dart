@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -209,6 +210,7 @@ class _ChatScreenState extends State<ChatScreen> {
       drawer: ChaitDrawer(store: widget.store),
       body: Stack(
           children: [
+            _AssistantWallpaper(assistant: assistant),
             Positioned.fill(
               child: GestureDetector(
                 behavior: HitTestBehavior.translucent,
@@ -219,10 +221,10 @@ class _ChatScreenState extends State<ChatScreen> {
                   child: session.messages.isEmpty
                       ? Padding(
                           padding: EdgeInsets.only(
-                            top: MediaQuery.paddingOf(context).top + 128,
+                            top: MediaQuery.paddingOf(context).top + 116,
                             bottom: 108,
                           ),
-                          child: _EmptyChat(assistant: assistant),
+                          child: const _EmptyChat(),
                         )
                       : ListView.builder(
                           controller: _scrollController,
@@ -230,7 +232,7 @@ class _ChatScreenState extends State<ChatScreen> {
                               ScrollViewKeyboardDismissBehavior.onDrag,
                           padding: EdgeInsets.fromLTRB(
                             20,
-                            MediaQuery.paddingOf(context).top + 138,
+                            MediaQuery.paddingOf(context).top + 130,
                             20,
                             118,
                           ),
@@ -247,8 +249,9 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
             _ImmersiveTopBar(
-              assistantName: assistant.name,
+              assistant: assistant,
               sessionTitle: session.title,
+              showSessionTitle: widget.store.settings.showSessionTitle,
               showNewChat: session.messages.isNotEmpty,
               onOpenDrawer: () => _scaffoldKey.currentState?.openDrawer(),
               onNewChat: () => widget.store.createSession(),
@@ -281,30 +284,38 @@ Future<void> _showRenameSessionDialog({
   final controller = TextEditingController(text: session.title);
   final action = await showDialog<String>(
     context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('会话标题'),
-      content: TextField(
+    builder: (context) => _ChatSoftDialog(
+      title: '会话标题',
+      child: TextField(
         controller: controller,
         autofocus: true,
         maxLength: 24,
         cursorColor: _textColor(context),
-        decoration: const InputDecoration(
+        decoration: InputDecoration(
+          counterText: '',
           hintText: '输入自定义标题',
-          border: OutlineInputBorder(),
+          filled: true,
+          fillColor: _softColor(context),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: BorderSide.none,
+          ),
+          contentPadding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
         ),
       ),
       actions: [
-        TextButton(
+        _ChatDialogAction(
+          label: '恢复自动',
           onPressed: () => Navigator.pop(context, 'auto'),
-          child: const Text('恢复自动'),
         ),
-        TextButton(
+        _ChatDialogAction(
+          label: '取消',
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
         ),
-        TextButton(
+        _ChatDialogAction(
+          label: '保存',
+          filled: true,
           onPressed: () => Navigator.pop(context, 'save'),
-          child: const Text('保存'),
         ),
       ],
     ),
@@ -318,18 +329,47 @@ Future<void> _showRenameSessionDialog({
   }
 }
 
+class _AssistantWallpaper extends StatelessWidget {
+  const _AssistantWallpaper({required this.assistant});
+
+  final AssistantPreset assistant;
+
+  @override
+  Widget build(BuildContext context) {
+    final path = assistant.wallpaperImagePath.trim();
+    if (path.isEmpty || !File(path).existsSync()) {
+      return const SizedBox.shrink();
+    }
+    return Positioned.fill(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.file(File(path), fit: BoxFit.cover),
+          ColoredBox(color: _background(context).withValues(alpha: 0.82)),
+          BackdropFilter(
+            filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: const ColoredBox(color: Colors.transparent),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ImmersiveTopBar extends StatelessWidget {
   const _ImmersiveTopBar({
-    required this.assistantName,
+    required this.assistant,
     required this.sessionTitle,
+    required this.showSessionTitle,
     required this.showNewChat,
     required this.onOpenDrawer,
     required this.onNewChat,
     required this.onRenameTitle,
   });
 
-  final String assistantName;
+  final AssistantPreset assistant;
   final String sessionTitle;
+  final bool showSessionTitle;
   final bool showNewChat;
   final VoidCallback onOpenDrawer;
   final VoidCallback onNewChat;
@@ -338,7 +378,7 @@ class _ImmersiveTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final top = MediaQuery.paddingOf(context).top;
-    final contentTop = top + 4;
+    final contentTop = top + 2;
     final bg = _background(context);
     return Positioned(
       left: 0,
@@ -407,8 +447,9 @@ class _ImmersiveTopBar extends StatelessWidget {
                     ),
                     Expanded(
                       child: _ChatTitle(
-                        assistantName: assistantName,
+                        assistant: assistant,
                         sessionTitle: sessionTitle,
+                        showSessionTitle: showSessionTitle,
                         onLongPress: onRenameTitle,
                       ),
                     ),
@@ -439,13 +480,15 @@ class _ImmersiveTopBar extends StatelessWidget {
 
 class _ChatTitle extends StatelessWidget {
   const _ChatTitle({
-    required this.assistantName,
+    required this.assistant,
     required this.sessionTitle,
+    required this.showSessionTitle,
     required this.onLongPress,
   });
 
-  final String assistantName;
+  final AssistantPreset assistant;
   final String sessionTitle;
+  final bool showSessionTitle;
   final VoidCallback onLongPress;
 
   @override
@@ -453,32 +496,45 @@ class _ChatTitle extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onLongPress: onLongPress,
-      child: Column(
+      child: Row(
         mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(
-            assistantName,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: _textColor(context),
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              height: 1.1,
-              letterSpacing: 0,
-            ),
-          ),
-          const SizedBox(height: 3),
-          Text(
-            sessionTitle,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: _mutedColor(context),
-              fontSize: 10.5,
-              fontWeight: FontWeight.w400,
-              height: 1.1,
-              letterSpacing: 0,
+          _TitleAvatar(assistant: assistant),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  assistant.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: _textColor(context),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    height: 1.1,
+                    letterSpacing: 0,
+                  ),
+                ),
+                if (showSessionTitle) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    sessionTitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: _mutedColor(context),
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w400,
+                      height: 1.1,
+                      letterSpacing: 0,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
         ],
@@ -487,58 +543,137 @@ class _ChatTitle extends StatelessWidget {
   }
 }
 
-class _EmptyChat extends StatelessWidget {
-  const _EmptyChat({required this.assistant});
+class _TitleAvatar extends StatelessWidget {
+  const _TitleAvatar({required this.assistant});
 
   final AssistantPreset assistant;
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 40),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _softColor(context),
-              ),
-              alignment: Alignment.center,
+    final path = assistant.avatarImagePath.trim();
+    final hasImage = path.isNotEmpty && File(path).existsSync();
+    return Container(
+      width: 26,
+      height: 26,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: _softColor(context),
+      ),
+      child: hasImage
+          ? Image.file(File(path), fit: BoxFit.cover)
+          : Center(
               child: Text(
-                _initialOf(assistant.name),
+                _avatarText(assistant),
                 style: TextStyle(
                   color: _textColor(context),
-                  fontSize: 18,
+                  fontSize: 11.5,
                   fontWeight: FontWeight.w600,
                 ),
               ),
             ),
-            const SizedBox(height: 14),
+    );
+  }
+}
+
+class _EmptyChat extends StatelessWidget {
+  const _EmptyChat();
+
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox.expand();
+  }
+}
+
+String _avatarText(AssistantPreset assistant) {
+  final source = assistant.avatar.trim().isEmpty
+      ? assistant.name.trim()
+      : assistant.avatar.trim();
+  if (source.isEmpty) {
+    return '助';
+  }
+  return String.fromCharCodes(source.runes.take(2));
+}
+
+class _ChatSoftDialog extends StatelessWidget {
+  const _ChatSoftDialog({
+    required this.title,
+    required this.child,
+    required this.actions,
+  });
+
+  final String title;
+  final Widget child;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
+      backgroundColor: Colors.transparent,
+      child: Container(
+        decoration: BoxDecoration(
+          color: _surface(context),
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: _shadowColor(context, 0.18),
+              blurRadius: 34,
+              spreadRadius: 1,
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             Text(
-              assistant.name,
+              title,
               style: TextStyle(
                 color: _textColor(context),
-                fontSize: 18,
+                fontSize: 17,
                 fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              assistant.description,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: _mutedColor(context),
-                fontSize: 14,
-                height: 1.45,
-              ),
+            const SizedBox(height: 14),
+            child,
+            const SizedBox(height: 16),
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 8,
+              runSpacing: 8,
+              children: actions,
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _ChatDialogAction extends StatelessWidget {
+  const _ChatDialogAction({
+    required this.label,
+    required this.onPressed,
+    this.filled = false,
+  });
+
+  final String label;
+  final VoidCallback onPressed;
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton(
+      style: TextButton.styleFrom(
+        backgroundColor: filled ? _textColor(context) : _softColor(context),
+        foregroundColor: filled ? _background(context) : _textColor(context),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      ),
+      onPressed: onPressed,
+      child: Text(label),
     );
   }
 }
@@ -673,7 +808,7 @@ class _UserBubbleFrameState extends State<_UserBubbleFrame>
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOutCubic,
-        padding: const EdgeInsets.fromLTRB(15, 10, 15, 11),
+        padding: const EdgeInsets.fromLTRB(15, 11, 15, 9),
         decoration: BoxDecoration(
           color: _userBubbleColor(context),
           borderRadius: const BorderRadius.only(
@@ -705,13 +840,76 @@ class _MessageContent extends StatelessWidget {
     final codeBackground = message.isUser
         ? textColor.withValues(alpha: 0.10)
         : _softColor(context);
-    return MessageRenderer(
-      content: content,
-      textColor: textColor,
-      mutedColor: muted,
-      codeBackground: codeBackground,
-      isUser: message.isUser,
-      animate: message.isStreaming,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        MessageRenderer(
+          content: content,
+          textColor: textColor,
+          mutedColor: muted,
+          codeBackground: codeBackground,
+          isUser: message.isUser,
+          animate: message.isStreaming,
+        ),
+        if (message.isStreaming && content.trim().isNotEmpty) ...[
+          const SizedBox(height: 8),
+          _StreamingTail(color: muted),
+        ],
+      ],
+    );
+  }
+}
+
+class _StreamingTail extends StatefulWidget {
+  const _StreamingTail({required this.color});
+
+  final Color color;
+
+  @override
+  State<_StreamingTail> createState() => _StreamingTailState();
+}
+
+class _StreamingTailState extends State<_StreamingTail>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController controller;
+
+  @override
+  void initState() {
+    super.initState();
+    controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        final value = controller.value;
+        final alpha = value < 0.5 ? 0.18 + value * 0.38 : 0.56 - (value - 0.5) * 0.38;
+        return Container(
+          width: 26,
+          height: 3,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(999),
+            gradient: LinearGradient(
+              colors: [
+                widget.color.withValues(alpha: 0),
+                widget.color.withValues(alpha: alpha),
+                widget.color.withValues(alpha: 0),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -758,8 +956,8 @@ class _GenerationStatusTextState extends State<_GenerationStatusText>
     super.initState();
     controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    )..repeat(reverse: true);
+      duration: const Duration(milliseconds: 2200),
+    )..repeat();
   }
 
   @override
@@ -773,26 +971,35 @@ class _GenerationStatusTextState extends State<_GenerationStatusText>
     return AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
-        final pulse = 0.38 + controller.value * 0.28;
         final isSearching = widget.text.contains('搜索') ||
             widget.text.contains('读取') ||
             widget.text.contains('工具');
         final dots = widget.text.trim() == '...';
+        final pulse = controller.value < 0.5
+            ? 0.46 + controller.value * 0.28
+            : 0.74 - (controller.value - 0.5) * 0.28;
+        final label = isSearching
+            ? widget.text
+            : dots
+                ? '处理中'
+                : widget.text.trim().isEmpty
+                    ? '思考中'
+                    : widget.text;
         return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
+          padding: const EdgeInsets.symmetric(vertical: 9),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (isSearching)
-                _StatusFlowMark(progress: controller.value)
-              else if (dots)
-                _StatusDots(progress: controller.value),
-              if (isSearching || dots) const SizedBox(width: 8),
+              _StatusSignal(
+                progress: controller.value,
+                searching: isSearching,
+              ),
+              const SizedBox(width: 9),
               Text(
-                dots ? '处理中' : widget.text,
+                label,
                 style: TextStyle(
                   color: _mutedColor(context).withValues(alpha: pulse),
-                  fontSize: 14,
+                  fontSize: 13.5,
                   height: 1.45,
                   letterSpacing: 0,
                 ),
@@ -805,65 +1012,73 @@ class _GenerationStatusTextState extends State<_GenerationStatusText>
   }
 }
 
-class _StatusFlowMark extends StatelessWidget {
-  const _StatusFlowMark({required this.progress});
+class _StatusSignal extends StatelessWidget {
+  const _StatusSignal({
+    required this.progress,
+    required this.searching,
+  });
 
   final double progress;
+  final bool searching;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 34,
-      height: 2,
+      width: 38,
+      height: 16,
       child: Stack(
+        clipBehavior: Clip.none,
         children: [
-          Positioned.fill(
-            child: DecoratedBox(
+          Positioned(
+            left: 0,
+            right: 0,
+            top: 7,
+            child: Container(
+              height: 2,
               decoration: BoxDecoration(
-                color: _mutedColor(context).withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(999),
+                color: _mutedColor(context).withValues(alpha: 0.12),
               ),
             ),
           ),
           Align(
             alignment: Alignment(-1 + progress * 2, 0),
             child: Container(
-              width: 14,
-              height: 2,
+              width: searching ? 18 : 12,
+              height: searching ? 6 : 6,
               decoration: BoxDecoration(
-                color: _mutedColor(context).withValues(alpha: 0.55),
+                color: _mutedColor(context).withValues(alpha: 0.34),
                 borderRadius: BorderRadius.circular(999),
+                boxShadow: [
+                  BoxShadow(
+                    color: _mutedColor(context).withValues(alpha: 0.14),
+                    blurRadius: 8,
+                    spreadRadius: 1,
+                  ),
+                ],
               ),
             ),
           ),
+          if (!searching)
+            ...List.generate(3, (index) {
+              final phase = (progress + index * 0.18) % 1;
+              final opacity =
+                  phase < 0.5 ? 0.18 + phase * 0.32 : 0.50 - (phase - 0.5) * 0.32;
+              return Positioned(
+                left: 6 + index * 11,
+                top: 6,
+                child: Container(
+                  width: 4,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: _mutedColor(context).withValues(alpha: opacity),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              );
+            }),
         ],
       ),
-    );
-  }
-}
-
-class _StatusDots extends StatelessWidget {
-  const _StatusDots({required this.progress});
-
-  final double progress;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: List.generate(3, (index) {
-        final phase = (progress + index / 3) % 1.0;
-        final opacity = phase < 0.5 ? 0.25 + phase : 0.75 - (phase - 0.5);
-        return Container(
-          width: 4,
-          height: 4,
-          margin: EdgeInsets.only(right: index == 2 ? 0 : 3),
-          decoration: BoxDecoration(
-            color: _mutedColor(context).withValues(alpha: opacity),
-            shape: BoxShape.circle,
-          ),
-        );
-      }),
     );
   }
 }
@@ -1201,17 +1416,25 @@ class _ChaitDrawerState extends State<ChaitDrawer> {
   Future<bool> _confirmClear(String title) async {
     final result = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: const Text('置顶会话会保留。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
+      builder: (context) => _ChatSoftDialog(
+        title: title,
+        child: Text(
+          '置顶会话会保留。',
+          style: TextStyle(
+            color: _mutedColor(context),
+            fontSize: 14,
+            height: 1.45,
           ),
-          TextButton(
+        ),
+        actions: [
+          _ChatDialogAction(
+            label: '取消',
+            onPressed: () => Navigator.pop(context, false),
+          ),
+          _ChatDialogAction(
+            label: '清除',
+            filled: true,
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('清除'),
           ),
         ],
       ),
@@ -1540,14 +1763,6 @@ Future<String?> _showScaleMenu(
       );
     },
   );
-}
-
-String _initialOf(String value) {
-  final trimmed = value.trim();
-  if (trimmed.isEmpty) {
-    return '?';
-  }
-  return String.fromCharCodes(trimmed.runes.take(1));
 }
 
 Future<void> showModelChoiceSheet({

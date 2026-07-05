@@ -1,8 +1,11 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../app_store.dart';
 import '../models.dart';
@@ -396,6 +399,59 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
     }
   }
 
+  Future<void> _addManualModel() async {
+    await _save();
+    final controller = TextEditingController();
+    final modelId = await showDialog<String>(
+      context: context,
+      builder: (context) => _SoftDialog(
+        title: '添加模型 ID',
+        child: TextField(
+          controller: controller,
+          autofocus: true,
+          cursorColor: _textColor(context),
+          decoration: InputDecoration(
+            hintText: '例如 gpt-4o-mini',
+            filled: true,
+            fillColor: _softColor(context),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(18),
+              borderSide: BorderSide.none,
+            ),
+            contentPadding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+          ),
+        ),
+        actions: [
+          _DialogAction(
+            label: '取消',
+            onPressed: () => Navigator.pop(context),
+          ),
+          _DialogAction(
+            label: '添加',
+            filled: true,
+            onPressed: () => Navigator.pop(context, controller.text),
+          ),
+        ],
+      ),
+    );
+    final trimmed = modelId?.trim() ?? '';
+    controller.dispose();
+    if (trimmed.isEmpty) {
+      return;
+    }
+    try {
+      final model = await widget.store.addManualModel(provider.id, trimmed);
+      if (mounted) {
+        setState(() {});
+        _snack(context, '已添加 ${model.displayName}');
+      }
+    } catch (err) {
+      if (mounted) {
+        _snack(context, widget.store.friendlyError(err));
+      }
+    }
+  }
+
   Future<void> _refreshBalanceQuietly() async {
     if (provider.balancePath.trim().isEmpty ||
         apiKey.text.trim().isEmpty ||
@@ -501,9 +557,22 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
                 minLines: 4,
                 maxLines: 8,
               ),
-              _ActionButton(
-                label: loading ? '正在刷新…' : '从服务商刷新模型',
-                onPressed: loading ? () {} : _refresh,
+              Row(
+                children: [
+                  Expanded(
+                    child: _ActionButton(
+                      label: loading ? '正在刷新…' : '刷新模型',
+                      onPressed: loading ? () {} : _refresh,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _PillActionButton(
+                      label: '手动添加模型',
+                      onPressed: _addManualModel,
+                    ),
+                  ),
+                ],
               ),
               if (currentProvider.balanceText.trim().isNotEmpty)
                 Padding(
@@ -1389,16 +1458,12 @@ class AssistantListPage extends StatelessWidget {
               final assistant = store.assistants[index];
               return ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: CircleAvatar(
-                  backgroundColor: _softColor(context),
-                  foregroundColor: _textColor(context),
-                  child: Text(
-                    _avatarPreviewText(
-                      assistant.avatar.trim().isNotEmpty
-                          ? assistant.avatar
-                          : assistant.name,
-                    ),
-                  ),
+                leading: _AssistantAvatarPreview(
+                  imagePath: assistant.avatarImagePath,
+                  text: assistant.avatar.trim().isNotEmpty
+                      ? assistant.avatar
+                      : assistant.name,
+                  size: 42,
                 ),
                 title: Text(assistant.name),
                 subtitle: Text(assistant.description),
@@ -1460,20 +1525,25 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
   late final TextEditingController description;
   late final TextEditingController prompt;
   late final TextEditingController avatar;
-  late final TextEditingController identityProfile;
-  late final TextEditingController coreKnowledge;
-  late final TextEditingController familiarKnowledge;
-  late final TextEditingController generalKnowledge;
-  late final TextEditingController knowledgeBoundaries;
-  late final TextEditingController experienceInventory;
-  late final TextEditingController speechStyle;
-  late final TextEditingController workStyle;
-  late final TextEditingController toolStrategy;
-  late final TextEditingController outputStyle;
-  late final TextEditingController antiAiRules;
+  late final TextEditingController age;
+  late final TextEditingController gender;
+  late final TextEditingController personality;
+  late final TextEditingController relationship;
+  late final TextEditingController communicationStyle;
+  late final TextEditingController expertise;
+  late final TextEditingController familiarTopics;
+  late final TextEditingController limitedTopics;
+  late final TextEditingController uncertaintyRules;
+  late final TextEditingController emojiRules;
+  late final TextEditingController paragraphRules;
+  late final TextEditingController markdownRules;
+  late final TextEditingController toolRules;
+  late final TextEditingController advancedRules;
   late final TextEditingController temperature;
   late final TextEditingController topP;
   late final TextEditingController maxTokens;
+  late String avatarImagePath;
+  late String wallpaperImagePath;
   late String preferredModelId;
   bool polishing = false;
 
@@ -1485,38 +1555,45 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
     description = TextEditingController(text: preset.description);
     prompt = TextEditingController(text: preset.systemPrompt);
     avatar = TextEditingController(text: preset.avatar);
-    identityProfile = TextEditingController(text: preset.identityProfile);
-    coreKnowledge = TextEditingController(text: preset.coreKnowledge);
-    familiarKnowledge = TextEditingController(text: preset.familiarKnowledge);
-    generalKnowledge = TextEditingController(text: preset.generalKnowledge);
-    knowledgeBoundaries =
-        TextEditingController(text: preset.knowledgeBoundaries);
-    experienceInventory =
-        TextEditingController(text: preset.experienceInventory);
-    speechStyle = TextEditingController(text: preset.speechStyle);
-    workStyle = TextEditingController(text: preset.workStyle);
-    toolStrategy = TextEditingController(text: preset.toolStrategy);
-    outputStyle = TextEditingController(text: preset.outputStyle);
-    antiAiRules = TextEditingController(text: preset.antiAiRules);
+    age = TextEditingController(text: preset.age);
+    gender = TextEditingController(text: preset.gender);
+    personality = TextEditingController(text: preset.personality);
+    relationship = TextEditingController(text: preset.relationship);
+    communicationStyle =
+        TextEditingController(text: preset.communicationStyle);
+    expertise = TextEditingController(text: preset.expertise);
+    familiarTopics = TextEditingController(text: preset.familiarTopics);
+    limitedTopics = TextEditingController(text: preset.limitedTopics);
+    uncertaintyRules = TextEditingController(text: preset.uncertaintyRules);
+    emojiRules = TextEditingController(text: preset.emojiRules);
+    paragraphRules = TextEditingController(text: preset.paragraphRules);
+    markdownRules = TextEditingController(text: preset.markdownRules);
+    toolRules = TextEditingController(text: preset.toolRules);
+    advancedRules = TextEditingController(text: preset.advancedRules);
     for (final controller in [
       name,
       description,
       prompt,
       avatar,
-      identityProfile,
-      coreKnowledge,
-      familiarKnowledge,
-      generalKnowledge,
-      knowledgeBoundaries,
-      experienceInventory,
-      speechStyle,
-      workStyle,
-      toolStrategy,
-      outputStyle,
-      antiAiRules,
+      age,
+      gender,
+      personality,
+      relationship,
+      communicationStyle,
+      expertise,
+      familiarTopics,
+      limitedTopics,
+      uncertaintyRules,
+      emojiRules,
+      paragraphRules,
+      markdownRules,
+      toolRules,
+      advancedRules,
     ]) {
       controller.addListener(_onPromptChanged);
     }
+    avatarImagePath = preset.avatarImagePath;
+    wallpaperImagePath = preset.wallpaperImagePath;
     preferredModelId = preset.preferredModelId;
     temperature = TextEditingController(text: preset.temperature?.toString());
     topP = TextEditingController(text: preset.topP?.toString());
@@ -1530,17 +1607,20 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
       description,
       prompt,
       avatar,
-      identityProfile,
-      coreKnowledge,
-      familiarKnowledge,
-      generalKnowledge,
-      knowledgeBoundaries,
-      experienceInventory,
-      speechStyle,
-      workStyle,
-      toolStrategy,
-      outputStyle,
-      antiAiRules,
+      age,
+      gender,
+      personality,
+      relationship,
+      communicationStyle,
+      expertise,
+      familiarTopics,
+      limitedTopics,
+      uncertaintyRules,
+      emojiRules,
+      paragraphRules,
+      markdownRules,
+      toolRules,
+      advancedRules,
     ]) {
       controller.removeListener(_onPromptChanged);
       controller.dispose();
@@ -1563,17 +1643,22 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
       ..description = description.text.trim()
       ..systemPrompt = prompt.text.trim()
       ..avatar = avatar.text.trim()
-      ..identityProfile = identityProfile.text.trim()
-      ..coreKnowledge = coreKnowledge.text.trim()
-      ..familiarKnowledge = familiarKnowledge.text.trim()
-      ..generalKnowledge = generalKnowledge.text.trim()
-      ..knowledgeBoundaries = knowledgeBoundaries.text.trim()
-      ..experienceInventory = experienceInventory.text.trim()
-      ..speechStyle = speechStyle.text.trim()
-      ..workStyle = workStyle.text.trim()
-      ..toolStrategy = toolStrategy.text.trim()
-      ..outputStyle = outputStyle.text.trim()
-      ..antiAiRules = antiAiRules.text.trim()
+      ..avatarImagePath = avatarImagePath.trim()
+      ..wallpaperImagePath = wallpaperImagePath.trim()
+      ..age = age.text.trim()
+      ..gender = gender.text.trim()
+      ..personality = personality.text.trim()
+      ..relationship = relationship.text.trim()
+      ..communicationStyle = communicationStyle.text.trim()
+      ..expertise = expertise.text.trim()
+      ..familiarTopics = familiarTopics.text.trim()
+      ..limitedTopics = limitedTopics.text.trim()
+      ..uncertaintyRules = uncertaintyRules.text.trim()
+      ..emojiRules = emojiRules.text.trim()
+      ..paragraphRules = paragraphRules.text.trim()
+      ..markdownRules = markdownRules.text.trim()
+      ..toolRules = toolRules.text.trim()
+      ..advancedRules = advancedRules.text.trim()
       ..modelOverride = ''
       ..preferredModelId = preferredModelId
       ..temperature = _nullableDouble(temperature.text)
@@ -1602,17 +1687,20 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
         description: description.text,
         systemPrompt: prompt.text,
         avatar: avatar.text,
-        identityProfile: identityProfile.text,
-        coreKnowledge: coreKnowledge.text,
-        familiarKnowledge: familiarKnowledge.text,
-        generalKnowledge: generalKnowledge.text,
-        knowledgeBoundaries: knowledgeBoundaries.text,
-        experienceInventory: experienceInventory.text,
-        speechStyle: speechStyle.text,
-        workStyle: workStyle.text,
-        toolStrategy: toolStrategy.text,
-        outputStyle: outputStyle.text,
-        antiAiRules: antiAiRules.text,
+        age: age.text,
+        gender: gender.text,
+        personality: personality.text,
+        relationship: relationship.text,
+        communicationStyle: communicationStyle.text,
+        expertise: expertise.text,
+        familiarTopics: familiarTopics.text,
+        limitedTopics: limitedTopics.text,
+        uncertaintyRules: uncertaintyRules.text,
+        emojiRules: emojiRules.text,
+        paragraphRules: paragraphRules.text,
+        markdownRules: markdownRules.text,
+        toolRules: toolRules.text,
+        advancedRules: advancedRules.text,
         temperature: temperature.text,
         topP: topP.text,
         maxTokens: maxTokens.text,
@@ -1622,20 +1710,22 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
       description.text = result['description'] ?? description.text;
       prompt.text = result['systemPrompt'] ?? prompt.text;
       avatar.text = result['avatar'] ?? avatar.text;
-      identityProfile.text = result['identityProfile'] ?? identityProfile.text;
-      coreKnowledge.text = result['coreKnowledge'] ?? coreKnowledge.text;
-      familiarKnowledge.text =
-          result['familiarKnowledge'] ?? familiarKnowledge.text;
-      generalKnowledge.text = result['generalKnowledge'] ?? generalKnowledge.text;
-      knowledgeBoundaries.text =
-          result['knowledgeBoundaries'] ?? knowledgeBoundaries.text;
-      experienceInventory.text =
-          result['experienceInventory'] ?? experienceInventory.text;
-      speechStyle.text = result['speechStyle'] ?? speechStyle.text;
-      workStyle.text = result['workStyle'] ?? workStyle.text;
-      toolStrategy.text = result['toolStrategy'] ?? toolStrategy.text;
-      outputStyle.text = result['outputStyle'] ?? outputStyle.text;
-      antiAiRules.text = result['antiAiRules'] ?? antiAiRules.text;
+      age.text = result['age'] ?? age.text;
+      gender.text = result['gender'] ?? gender.text;
+      personality.text = result['personality'] ?? personality.text;
+      relationship.text = result['relationship'] ?? relationship.text;
+      communicationStyle.text =
+          result['communicationStyle'] ?? communicationStyle.text;
+      expertise.text = result['expertise'] ?? expertise.text;
+      familiarTopics.text = result['familiarTopics'] ?? familiarTopics.text;
+      limitedTopics.text = result['limitedTopics'] ?? limitedTopics.text;
+      uncertaintyRules.text =
+          result['uncertaintyRules'] ?? uncertaintyRules.text;
+      emojiRules.text = result['emojiRules'] ?? emojiRules.text;
+      paragraphRules.text = result['paragraphRules'] ?? paragraphRules.text;
+      markdownRules.text = result['markdownRules'] ?? markdownRules.text;
+      toolRules.text = result['toolRules'] ?? toolRules.text;
+      advancedRules.text = result['advancedRules'] ?? advancedRules.text;
       temperature.text = result['temperature'] ?? temperature.text;
       topP.text = result['topP'] ?? topP.text;
       maxTokens.text = result['maxTokens'] ?? maxTokens.text;
@@ -1655,33 +1745,141 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
     final controller = TextEditingController();
     final result = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('生成助手档案'),
-        content: TextField(
+      builder: (context) => _SoftDialog(
+        title: '生成助手设定',
+        child: TextField(
           controller: controller,
           autofocus: true,
-          minLines: 3,
-          maxLines: 5,
+          minLines: 4,
+          maxLines: 6,
           cursorColor: _textColor(context),
-          decoration: const InputDecoration(
-            hintText: '用一句话描述你想要的助手',
-            border: OutlineInputBorder(),
+          decoration: InputDecoration(
+            hintText: '例如：说话自然、像耐心的中文学习伙伴，少用 emoji',
+            filled: true,
+            fillColor: _softColor(context),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(18),
+              borderSide: BorderSide.none,
+            ),
+            contentPadding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
           ),
         ),
         actions: [
-          TextButton(
+          _DialogAction(
+            label: '取消',
             onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
           ),
-          TextButton(
+          _DialogAction(
+            label: '生成',
+            filled: true,
             onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('生成'),
           ),
         ],
       ),
     );
     controller.dispose();
     return result;
+  }
+
+  Future<void> _openAvatarDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            Future<void> pick() async {
+              final image = await ImagePicker().pickImage(
+                source: ImageSource.gallery,
+                maxWidth: 1200,
+                imageQuality: 92,
+              );
+              if (image == null || !mounted) {
+                return;
+              }
+              final savedPath = await _persistPickedImage(image);
+              if (!mounted) {
+                return;
+              }
+              setState(() => avatarImagePath = savedPath);
+              setDialogState(() {});
+            }
+
+            void clear() {
+              setState(() => avatarImagePath = '');
+              setDialogState(() {});
+            }
+
+            return _SoftDialog(
+              title: '头像',
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _AssistantAvatarPreview(
+                    imagePath: avatarImagePath,
+                    text: avatar.text.trim().isEmpty
+                        ? name.text
+                        : avatar.text,
+                    size: 118,
+                    borderWidth: 6,
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: avatar,
+                    maxLength: 2,
+                    cursorColor: _textColor(context),
+                    decoration: InputDecoration(
+                      counterText: '',
+                      hintText: '头像文字',
+                      filled: true,
+                      fillColor: _softColor(context),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding:
+                          const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                if (avatarImagePath.trim().isNotEmpty)
+                  _DialogAction(label: '清除图片', onPressed: clear),
+                _DialogAction(label: '从相册选择', onPressed: pick),
+                _DialogAction(
+                  label: '完成',
+                  filled: true,
+                  onPressed: () => Navigator.pop(dialogContext),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _pickWallpaper() async {
+    final image = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1800,
+      imageQuality: 88,
+    );
+    if (image == null || !mounted) {
+      return;
+    }
+    final savedPath = await _persistPickedImage(image);
+    if (!mounted) {
+      return;
+    }
+    setState(() => wallpaperImagePath = savedPath);
+  }
+
+  Future<String> _persistPickedImage(XFile image) async {
+    final dir = await getApplicationDocumentsDirectory();
+    final suffix = image.path.toLowerCase().endsWith('.png') ? 'png' : 'jpg';
+    final target = File('${dir.path}/assistant-${newEntityId()}.$suffix');
+    return (await File(image.path).copy(target.path)).path;
   }
 
   @override
@@ -1712,106 +1910,105 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
             avatar: avatar,
             name: name,
             description: description,
+            age: age,
+            gender: gender,
+            personality: personality,
+            avatarImagePath: avatarImagePath,
+            onAvatarTap: _openAvatarDialog,
           ),
           const SizedBox(height: 16),
           _AssistantSection(
-            title: '人格档案',
-            subtitle: '身份像人，但不编造现实经历',
+            title: '交流方式',
+            subtitle: '只规范语气和距离感，不写人物经历',
             children: [
               _Field(
-                label: '身份背景',
-                hint: '描述这个助手的身份、服务对象、气质和边界',
-                controller: identityProfile,
-                minLines: 3,
-                maxLines: 5,
+                label: '关系距离',
+                hint: '朋友 / 同事 / 顾问 / 老师；亲近或克制的程度',
+                controller: relationship,
+                minLines: 2,
+                maxLines: 4,
               ),
               _Field(
-                label: '个人经历库存',
-                hint: '只写允许使用的背景、偏好和经验；没写的就不能编',
-                controller: experienceInventory,
+                label: '表达习惯',
+                hint: '句长、正式度、术语密度、口语感、情绪回应方式',
+                controller: communicationStyle,
                 minLines: 3,
                 maxLines: 5,
               ),
             ],
           ),
           _AssistantSection(
-            title: '知识边界',
-            subtitle: '把模型能力切成可表现、需谨慎、必须查证',
+            title: '知识与能力',
+            subtitle: '规定模型该表现成懂什么、不懂什么、何时查证',
             children: [
               _Field(
-                label: '核心知识',
-                hint: '可以自然自信回答的领域',
-                controller: coreKnowledge,
-                minLines: 2,
-                maxLines: 4,
-              ),
-              _Field(
-                label: '熟悉知识',
-                hint: '能处理，但复杂时要降低确定性的领域',
-                controller: familiarKnowledge,
-                minLines: 2,
-                maxLines: 4,
-              ),
-              _Field(
-                label: '泛常识',
-                hint: '可用普通人的常识方式交流的内容',
-                controller: generalKnowledge,
-                minLines: 2,
-                maxLines: 4,
-              ),
-              _Field(
-                label: '边界与禁止装懂',
-                hint: '不懂什么、什么时候要查、什么时候必须承认不确定',
-                controller: knowledgeBoundaries,
-                minLines: 3,
-                maxLines: 5,
-              ),
-            ],
-          ),
-          _AssistantSection(
-            title: '说话和做事',
-            subtitle: '控制真实交流感，而不是堆人设词',
-            children: [
-              _Field(
-                label: '表达方式',
-                hint: '句长、亲近感、正式度、术语密度、情绪反馈',
-                controller: speechStyle,
+                label: '擅长领域',
+                hint: '可以自然自信回答的知识和任务范围',
+                controller: expertise,
                 minLines: 3,
                 maxLines: 5,
               ),
               _Field(
-                label: '工作方式',
-                hint: '是否先追问、是否主动建议、如何处理不确定性',
-                controller: workStyle,
+                label: '一般可聊',
+                hint: '可以用常识或一般经验交流，但不装专业的范围',
+                controller: familiarTopics,
+                minLines: 2,
+                maxLines: 4,
+              ),
+              _Field(
+                label: '不擅长/需查证',
+                hint: '不该强答的范围，实时信息、高风险领域、具体事实等',
+                controller: limitedTopics,
                 minLines: 3,
                 maxLines: 5,
               ),
               _Field(
-                label: '输出偏好',
-                hint: 'Markdown、代码、公式、表格、引用、长短文结构',
-                controller: outputStyle,
+                label: '不确定时',
+                hint: '追问、搜索、降低确定性、明确无法确认的规则',
+                controller: uncertaintyRules,
                 minLines: 2,
                 maxLines: 4,
               ),
             ],
           ),
           _AssistantSection(
-            title: '能力和约束',
-            subtitle: '工具不是默认乱用，只在真实需要时补足能力',
+            title: '高级设定',
+            subtitle: '把“不像机器”的限制写在这里',
             children: [
               _Field(
-                label: '工具策略',
-                hint: '何时搜索、何时读时间、何时用 MCP 或附件',
-                controller: toolStrategy,
-                minLines: 3,
-                maxLines: 5,
+                label: 'Emoji',
+                hint: '默认少用；需要时自然点到为止，禁止连续堆叠',
+                controller: emojiRules,
+                minLines: 2,
+                maxLines: 4,
               ),
               _Field(
-                label: '去模型味规则',
-                hint: '避免模板话、空泛赞同、过度免责声明和“作为 AI”',
-                controller: antiAiRules,
-                minLines: 3,
-                maxLines: 5,
+                label: '分段',
+                hint: '不要每句另起一段，不要固定三段式，按内容自然排版',
+                controller: paragraphRules,
+                minLines: 2,
+                maxLines: 4,
+              ),
+              _Field(
+                label: '排版',
+                hint: 'Markdown、代码、公式、表格、引用、长短文结构偏好',
+                controller: markdownRules,
+                minLines: 2,
+                maxLines: 4,
+              ),
+              _Field(
+                label: '工具',
+                hint: '何时搜索、读系统时间、用 MCP 或附件；不要无脑先搜索',
+                controller: toolRules,
+                minLines: 2,
+                maxLines: 4,
+              ),
+              _Field(
+                label: '高级约束',
+                hint: '避免模板话、空泛赞同、过度免责声明、暴露系统设定等',
+                controller: advancedRules,
+                minLines: 4,
+                maxLines: 7,
               ),
               _Field(
                 label: '硬性补充指令',
@@ -1821,6 +2018,13 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
                 maxLines: 8,
               ),
             ],
+          ),
+          _AssistantWallpaperSection(
+            imagePath: wallpaperImagePath,
+            onChoose: _pickWallpaper,
+            onClear: wallpaperImagePath.trim().isEmpty
+                ? null
+                : () => setState(() => wallpaperImagePath = ''),
           ),
           _ModelPickerTile(
             label: '助手偏好模型',
@@ -1867,11 +2071,21 @@ class _AssistantProfileHeader extends StatelessWidget {
     required this.avatar,
     required this.name,
     required this.description,
+    required this.age,
+    required this.gender,
+    required this.personality,
+    required this.avatarImagePath,
+    required this.onAvatarTap,
   });
 
   final TextEditingController avatar;
   final TextEditingController name;
   final TextEditingController description;
+  final TextEditingController age;
+  final TextEditingController gender;
+  final TextEditingController personality;
+  final String avatarImagePath;
+  final VoidCallback onAvatarTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1884,22 +2098,40 @@ class _AssistantProfileHeader extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 58,
-                  height: 58,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: _softColor(context),
-                    border: Border.all(color: _lineColor(context)),
-                  ),
-                  child: Text(
-                    _avatarPreviewText(symbol, max: 2),
-                    style: TextStyle(
-                      color: _textColor(context),
-                      fontSize: 22,
-                      fontWeight: FontWeight.w600,
-                    ),
+                GestureDetector(
+                  onTap: onAvatarTap,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      _AssistantAvatarPreview(
+                        imagePath: avatarImagePath,
+                        text: symbol,
+                        size: 62,
+                      ),
+                      Positioned(
+                        right: -2,
+                        bottom: -2,
+                        child: Container(
+                          width: 24,
+                          height: 24,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: _textColor(context),
+                            boxShadow: [
+                              BoxShadow(
+                                color: _shadowColor(context, 0.18),
+                                blurRadius: 14,
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            Icons.photo_camera_outlined,
+                            size: 13,
+                            color: _background(context),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(width: 14),
@@ -1907,19 +2139,40 @@ class _AssistantProfileHeader extends StatelessWidget {
                   child: Column(
                     children: [
                       _Field(
-                        label: '头像文字',
-                        hint: '助',
-                        controller: avatar,
-                      ),
-                      _Field(
                         label: '名称',
                         hint: '写作助手',
                         controller: name,
+                      ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _Field(
+                              label: '年龄感',
+                              hint: '可不填',
+                              controller: age,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _Field(
+                              label: '性别表达',
+                              hint: '可不填',
+                              controller: gender,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
               ],
+            ),
+            _Field(
+              label: '性格特征',
+              hint: '稳定、自然、可执行的交流特征，不写故事经历',
+              controller: personality,
+              minLines: 2,
+              maxLines: 4,
             ),
             _Field(
               label: '一句话定位',
@@ -1929,6 +2182,149 @@ class _AssistantProfileHeader extends StatelessWidget {
               maxLines: 3,
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AssistantAvatarPreview extends StatelessWidget {
+  const _AssistantAvatarPreview({
+    required this.imagePath,
+    required this.text,
+    required this.size,
+    this.borderWidth = 1,
+  });
+
+  final String imagePath;
+  final String text;
+  final double size;
+  final double borderWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    final path = imagePath.trim();
+    final hasImage = path.isNotEmpty && File(path).existsSync();
+    return Container(
+      width: size,
+      height: size,
+      padding: EdgeInsets.all(borderWidth),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: _surface(context),
+        border: Border.all(color: _lineColor(context).withValues(alpha: 0.55)),
+      ),
+      child: ClipOval(
+        child: hasImage
+            ? Image.file(File(path), fit: BoxFit.cover)
+            : ColoredBox(
+                color: _softColor(context),
+                child: Center(
+                  child: Text(
+                    _avatarPreviewText(text, max: 2),
+                    style: TextStyle(
+                      color: _textColor(context),
+                      fontSize: size * 0.34,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+      ),
+    );
+  }
+}
+
+class _AssistantWallpaperSection extends StatelessWidget {
+  const _AssistantWallpaperSection({
+    required this.imagePath,
+    required this.onChoose,
+    required this.onClear,
+  });
+
+  final String imagePath;
+  final VoidCallback onChoose;
+  final VoidCallback? onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final path = imagePath.trim();
+    final hasImage = path.isNotEmpty && File(path).existsSync();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: _SettingsCard(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 13, 14, 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '聊天壁纸',
+                style: TextStyle(
+                  color: _textColor(context),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 12),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: AspectRatio(
+                  aspectRatio: 1.85,
+                  child: hasImage
+                      ? Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            Image.file(File(path), fit: BoxFit.cover),
+                            DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Colors.transparent,
+                                    Colors.black.withValues(alpha: 0.12),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        )
+                      : ColoredBox(
+                          color: _softColor(context),
+                          child: Center(
+                            child: Icon(
+                              Icons.wallpaper_outlined,
+                              color: _mutedColor(context),
+                              size: 28,
+                            ),
+                          ),
+                        ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _PillActionButton(
+                      label: hasImage ? '更换' : '选择图片',
+                      onPressed: onChoose,
+                    ),
+                  ),
+                  if (onClear != null) ...[
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _PillActionButton(
+                        label: '清除',
+                        onPressed: onClear!,
+                        subtle: true,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -2180,6 +2576,7 @@ class AppearancePage extends StatefulWidget {
 
 class _AppearancePageState extends State<AppearancePage> {
   late bool haptics;
+  late bool showSessionTitle;
   late String appearanceMode;
   late int themeColorValue;
   late double fontScale;
@@ -2189,6 +2586,7 @@ class _AppearancePageState extends State<AppearancePage> {
     super.initState();
     final settings = widget.store.settings;
     haptics = settings.haptics;
+    showSessionTitle = settings.showSessionTitle;
     appearanceMode = settings.appearanceMode;
     themeColorValue = settings.themeColorValue;
     fontScale = settings.fontScale.clamp(0.74, 1.28).toDouble();
@@ -2199,6 +2597,7 @@ class _AppearancePageState extends State<AppearancePage> {
       ..appearanceMode = appearanceMode
       ..themeColorValue = themeColorValue
       ..fontScale = fontScale
+      ..showSessionTitle = showSessionTitle
       ..haptics = haptics;
     await widget.store.updateSettings(next, widget.store.apiKey);
     if (!mounted) {
@@ -2309,12 +2708,24 @@ class _AppearancePageState extends State<AppearancePage> {
           ),
           _AppearancePanel(
             title: '交互',
-            child: SwitchListTile(
-              value: haptics,
-              activeThumbColor: _textColor(context),
-              contentPadding: EdgeInsets.zero,
-              title: const Text('触感反馈'),
-              onChanged: (value) => setState(() => haptics = value),
+            child: Column(
+              children: [
+                SwitchListTile(
+                  value: showSessionTitle,
+                  activeThumbColor: _textColor(context),
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('聊天界面显示会话标题'),
+                  onChanged: (value) =>
+                      setState(() => showSessionTitle = value),
+                ),
+                SwitchListTile(
+                  value: haptics,
+                  activeThumbColor: _textColor(context),
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('触感反馈'),
+                  onChanged: (value) => setState(() => haptics = value),
+                ),
+              ],
             ),
           ),
         ],
@@ -3436,6 +3847,119 @@ class _ActionButton extends StatelessWidget {
         onPressed: onPressed,
         child: Text(label),
       ),
+    );
+  }
+}
+
+class _PillActionButton extends StatelessWidget {
+  const _PillActionButton({
+    required this.label,
+    required this.onPressed,
+    this.subtle = false,
+  });
+
+  final String label;
+  final VoidCallback onPressed;
+  final bool subtle;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 48,
+      child: TextButton(
+        style: TextButton.styleFrom(
+          backgroundColor: subtle ? _softColor(context) : _textColor(context),
+          foregroundColor: subtle ? _textColor(context) : _background(context),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+        onPressed: onPressed,
+        child: Text(label),
+      ),
+    );
+  }
+}
+
+class _SoftDialog extends StatelessWidget {
+  const _SoftDialog({
+    required this.title,
+    required this.child,
+    required this.actions,
+  });
+
+  final String title;
+  final Widget child;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
+      backgroundColor: Colors.transparent,
+      child: Container(
+        decoration: BoxDecoration(
+          color: _surface(context),
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: _shadowColor(context, 0.18),
+              blurRadius: 34,
+              spreadRadius: 1,
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: TextStyle(
+                color: _textColor(context),
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 14),
+            child,
+            const SizedBox(height: 16),
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 8,
+              runSpacing: 8,
+              children: actions,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DialogAction extends StatelessWidget {
+  const _DialogAction({
+    required this.label,
+    required this.onPressed,
+    this.filled = false,
+  });
+
+  final String label;
+  final VoidCallback onPressed;
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton(
+      style: TextButton.styleFrom(
+        backgroundColor: filled ? _textColor(context) : _softColor(context),
+        foregroundColor: filled ? _background(context) : _textColor(context),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      ),
+      onPressed: onPressed,
+      child: Text(label),
     );
   }
 }

@@ -263,6 +263,36 @@ class AppStore extends ChangeNotifier {
     return fetched;
   }
 
+  Future<AiModelConfig> addManualModel(
+    String providerId,
+    String modelName,
+  ) async {
+    final name = modelName.trim();
+    if (name.isEmpty) {
+      throw const AiException('请输入模型 ID。');
+    }
+    final provider = providerById(providerId);
+    final model = AiClient().modelFromId(
+      provider: provider,
+      modelId: name,
+      enabled: true,
+    );
+    final index = settings.models.indexWhere((item) => item.id == model.id);
+    if (index == -1) {
+      settings.models.add(model);
+    } else {
+      settings.models[index] = model..enabled = true;
+    }
+    if (settings.defaultModelId.isEmpty) {
+      settings.defaultModelId = model.id;
+    }
+    provider.updatedAt = DateTime.now();
+    _repairModelSelections();
+    notifyListeners();
+    await save();
+    return model;
+  }
+
   Future<void> setModelEnabled(String modelId, bool enabled) async {
     final model = modelById(modelId);
     model.enabled = enabled;
@@ -817,17 +847,20 @@ class AppStore extends ChangeNotifier {
     required String description,
     required String systemPrompt,
     required String avatar,
-    required String identityProfile,
-    required String coreKnowledge,
-    required String familiarKnowledge,
-    required String generalKnowledge,
-    required String knowledgeBoundaries,
-    required String experienceInventory,
-    required String speechStyle,
-    required String workStyle,
-    required String toolStrategy,
-    required String outputStyle,
-    required String antiAiRules,
+    required String age,
+    required String gender,
+    required String personality,
+    required String relationship,
+    required String communicationStyle,
+    required String expertise,
+    required String familiarTopics,
+    required String limitedTopics,
+    required String uncertaintyRules,
+    required String emojiRules,
+    required String paragraphRules,
+    required String markdownRules,
+    required String toolRules,
+    required String advancedRules,
     required String temperature,
     required String topP,
     required String maxTokens,
@@ -851,17 +884,20 @@ class AppStore extends ChangeNotifier {
         'description': description,
         'systemPrompt': systemPrompt,
         'avatar': avatar,
-        'identityProfile': identityProfile,
-        'coreKnowledge': coreKnowledge,
-        'familiarKnowledge': familiarKnowledge,
-        'generalKnowledge': generalKnowledge,
-        'knowledgeBoundaries': knowledgeBoundaries,
-        'experienceInventory': experienceInventory,
-        'speechStyle': speechStyle,
-        'workStyle': workStyle,
-        'toolStrategy': toolStrategy,
-        'outputStyle': outputStyle,
-        'antiAiRules': antiAiRules,
+        'age': age,
+        'gender': gender,
+        'personality': personality,
+        'relationship': relationship,
+        'communicationStyle': communicationStyle,
+        'expertise': expertise,
+        'familiarTopics': familiarTopics,
+        'limitedTopics': limitedTopics,
+        'uncertaintyRules': uncertaintyRules,
+        'emojiRules': emojiRules,
+        'paragraphRules': paragraphRules,
+        'markdownRules': markdownRules,
+        'toolRules': toolRules,
+        'advancedRules': advancedRules,
         'preferredModelId': modelId,
         'temperature': temperature,
         'topP': topP,
@@ -1057,6 +1093,7 @@ class AppStore extends ChangeNotifier {
         }
       }
     }
+    _sortProvidersByPresetOrder();
     if (settings.searchProviders.isEmpty) {
       settings.searchProviders.addAll(defaultSearchProviders());
     }
@@ -1084,6 +1121,27 @@ class AppStore extends ChangeNotifier {
       settings.models.add(legacyModel);
       settings.defaultModelId = legacyModel.id;
     }
+  }
+
+  void _sortProvidersByPresetOrder() {
+    final order = {
+      for (var index = 0; index < defaultProviders().length; index += 1)
+        defaultProviders()[index].id: index,
+    };
+    settings.providers.sort((a, b) {
+      final aOrder = order[a.id];
+      final bOrder = order[b.id];
+      if (aOrder != null && bOrder != null) {
+        return aOrder.compareTo(bOrder);
+      }
+      if (aOrder != null) {
+        return -1;
+      }
+      if (bOrder != null) {
+        return 1;
+      }
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
   }
 
   Future<_SearchOutcome> _searchContextFor(
@@ -1752,27 +1810,30 @@ class _SearchOutcome {
 }
 
 const _polishSystemPrompt = '''
-你是 AI 助手档案设计器。请把用户的一句话描述和现有配置，转换为可微调的结构化助手档案。
+你是 AI 助手行为设定设计器。请把用户的一句话描述和现有配置，转换为可微调的助手规范。
 必须只返回 JSON 对象，不要 Markdown，不要解释。
 字段：
 - name: 简短中文名称，2 到 8 个字。
 - description: 14 到 28 个字，说明用途，不营销。
 - avatar: 1 到 2 个字符，用作头像文字。
-- identityProfile: 身份、背景、服务对象。要拟人但不能声称真实存在。
-- coreKnowledge: 核心知识表现范围，可自然自信回答的领域。
-- familiarKnowledge: 熟悉但复杂时需降低确定性的领域。
-- generalKnowledge: 可用普通常识方式交流的领域。
-- knowledgeBoundaries: 不懂、需查证、禁止装懂、禁止编造经历的边界。
-- experienceInventory: 允许使用的背景经验、偏好、生活经验；没有定义的经历不能编造。
-- speechStyle: 句长、亲近感、正式度、术语密度、情绪反馈和口语习惯。
-- workStyle: 追问、先给结论、主动建议、处理不确定性的方式。
-- toolStrategy: 搜索、系统时间、MCP、附件等工具的使用条件。
-- outputStyle: Markdown、代码、公式、表格、引用、长短文结构偏好。
-- antiAiRules: 去模型味规则，避免模板话、空泛赞同、过度免责声明和“作为 AI”。
+- age: 年龄感或空字符串。只用于语气和知识表现，不可诱导模型声称真实年龄。
+- gender: 性别表达或空字符串。只用于称呼和表达气质，不可声称真实身份。
+- personality: 3 到 6 个稳定性格特征，写成自然语言。
+- relationship: 与用户的交流距离和称呼方式，例如朋友、同事、顾问、老师。
+- communicationStyle: 句长、亲近感、正式度、术语密度、情绪反馈和口语习惯。
+- expertise: 可自然自信回答的专业领域。
+- familiarTopics: 可以用普通常识或一般经验交流的领域。
+- limitedTopics: 不擅长、需要查证、需要工具或需要降低确定性的领域。
+- uncertaintyRules: 不确定、超出知识范围、实时信息和高风险问题的处理方式。
+- emojiRules: emoji 使用规则。通常应少用、按语境使用、不要连续堆叠。
+- paragraphRules: 分段和篇幅规则。不要默认机械分段，不要每句另起一段。
+- markdownRules: Markdown、代码、公式、表格、引用、长短文结构偏好。
+- toolRules: 搜索、系统时间、MCP、附件等工具的使用条件。
+- advancedRules: 高级约束，包含去模型味、禁止频繁 emoji、禁止模板化话术、不要暴露系统设定等。
 - systemPrompt: 用户额外补充的最终硬性指令。没有必要时可保留现有值或返回空字符串。
 - temperature: 0 到 2 的数字字符串；偏事实任务降低，创意任务可提高。
 - topP: 0 到 1 的数字字符串。
 - maxTokens: 256 到 8192 的整数字符串。
 不要修改 preferredModelId，原样返回。
-如果 brief 与现有字段冲突，以 brief 为主，但不要生成危险、欺骗或要求模型假装真实经历的设定。
+如果 brief 与现有字段冲突，以 brief 为主，但不要生成危险、欺骗、色情、仇恨、违法或要求模型假装真实经历的设定。
 ''';

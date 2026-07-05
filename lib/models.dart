@@ -10,6 +10,22 @@ class AssistantPreset {
     required this.systemPrompt,
     this.avatar = '',
     this.avatarColorValue = 0xFFF2F2F2,
+    this.avatarImagePath = '',
+    this.wallpaperImagePath = '',
+    this.age = '',
+    this.gender = '',
+    this.personality = '',
+    this.relationship = '',
+    this.communicationStyle = '',
+    this.expertise = '',
+    this.familiarTopics = '',
+    this.limitedTopics = '',
+    this.uncertaintyRules = '',
+    this.emojiRules = '',
+    this.paragraphRules = '',
+    this.markdownRules = '',
+    this.toolRules = '',
+    this.advancedRules = '',
     this.identityProfile = '',
     this.coreKnowledge = '',
     this.familiarKnowledge = '',
@@ -34,6 +50,22 @@ class AssistantPreset {
   String systemPrompt;
   String avatar;
   int avatarColorValue;
+  String avatarImagePath;
+  String wallpaperImagePath;
+  String age;
+  String gender;
+  String personality;
+  String relationship;
+  String communicationStyle;
+  String expertise;
+  String familiarTopics;
+  String limitedTopics;
+  String uncertaintyRules;
+  String emojiRules;
+  String paragraphRules;
+  String markdownRules;
+  String toolRules;
+  String advancedRules;
   String identityProfile;
   String coreKnowledge;
   String familiarKnowledge;
@@ -58,6 +90,22 @@ class AssistantPreset {
         'systemPrompt': systemPrompt,
         'avatar': avatar,
         'avatarColorValue': avatarColorValue,
+        'avatarImagePath': avatarImagePath,
+        'wallpaperImagePath': wallpaperImagePath,
+        'age': age,
+        'gender': gender,
+        'personality': personality,
+        'relationship': relationship,
+        'communicationStyle': communicationStyle,
+        'expertise': expertise,
+        'familiarTopics': familiarTopics,
+        'limitedTopics': limitedTopics,
+        'uncertaintyRules': uncertaintyRules,
+        'emojiRules': emojiRules,
+        'paragraphRules': paragraphRules,
+        'markdownRules': markdownRules,
+        'toolRules': toolRules,
+        'advancedRules': advancedRules,
         'identityProfile': identityProfile,
         'coreKnowledge': coreKnowledge,
         'familiarKnowledge': familiarKnowledge,
@@ -85,6 +133,43 @@ class AssistantPreset {
       systemPrompt: json['systemPrompt'] as String? ?? '',
       avatar: json['avatar'] as String? ?? _initialAvatar(name),
       avatarColorValue: _toInt(json['avatarColorValue']) ?? 0xFFF2F2F2,
+      avatarImagePath: json['avatarImagePath'] as String? ?? '',
+      wallpaperImagePath: json['wallpaperImagePath'] as String? ?? '',
+      age: json['age'] as String? ?? '',
+      gender: json['gender'] as String? ?? '',
+      personality: json['personality'] as String? ??
+          json['identityProfile'] as String? ??
+          '',
+      relationship: json['relationship'] as String? ?? '',
+      communicationStyle: json['communicationStyle'] as String? ??
+          json['speechStyle'] as String? ??
+          '',
+      expertise: json['expertise'] as String? ??
+          json['coreKnowledge'] as String? ??
+          '',
+      familiarTopics: json['familiarTopics'] as String? ??
+          [
+            json['familiarKnowledge'] as String? ?? '',
+            json['generalKnowledge'] as String? ?? '',
+          ].where((item) => item.trim().isNotEmpty).join('\n'),
+      limitedTopics: json['limitedTopics'] as String? ??
+          json['knowledgeBoundaries'] as String? ??
+          '',
+      uncertaintyRules: json['uncertaintyRules'] as String? ?? '',
+      emojiRules: json['emojiRules'] as String? ?? '',
+      paragraphRules: json['paragraphRules'] as String? ?? '',
+      markdownRules: json['markdownRules'] as String? ??
+          json['outputStyle'] as String? ??
+          '',
+      toolRules: json['toolRules'] as String? ??
+          json['toolStrategy'] as String? ??
+          '',
+      advancedRules: json['advancedRules'] as String? ??
+          [
+            json['workStyle'] as String? ?? '',
+            json['antiAiRules'] as String? ?? '',
+            json['experienceInventory'] as String? ?? '',
+          ].where((item) => item.trim().isNotEmpty).join('\n'),
       identityProfile: json['identityProfile'] as String? ?? '',
       coreKnowledge: json['coreKnowledge'] as String? ?? '',
       familiarKnowledge: json['familiarKnowledge'] as String? ?? '',
@@ -115,35 +200,41 @@ class AssistantPreset {
       }
     }
 
-    add('身份档案', [
+    add('基础特征', [
       if (name.trim().isNotEmpty) '名称：${name.trim()}',
       if (description.trim().isNotEmpty) '定位：${description.trim()}',
-      identityProfile.trim(),
+      if (age.trim().isNotEmpty) '年龄感：${age.trim()}',
+      if (gender.trim().isNotEmpty) '性别表达：${gender.trim()}',
+      if (personality.trim().isNotEmpty) '性格特征：${personality.trim()}',
+      if (relationship.trim().isNotEmpty) '交流距离：${relationship.trim()}',
     ].where((item) => item.trim().isNotEmpty).join('\n'));
-    add('知识表现范围', [
-      if (coreKnowledge.trim().isNotEmpty) '核心知识：${coreKnowledge.trim()}',
-      if (familiarKnowledge.trim().isNotEmpty)
-        '熟悉知识：${familiarKnowledge.trim()}',
-      if (generalKnowledge.trim().isNotEmpty)
-        '泛常识：${generalKnowledge.trim()}',
-      if (knowledgeBoundaries.trim().isNotEmpty)
-        '边界与禁止装懂：${knowledgeBoundaries.trim()}',
+    add('表达方式', communicationStyle);
+    add('知识与能力范围', [
+      if (expertise.trim().isNotEmpty) '擅长领域：${expertise.trim()}',
+      if (familiarTopics.trim().isNotEmpty)
+        '可自然交流：${familiarTopics.trim()}',
+      if (limitedTopics.trim().isNotEmpty)
+        '不擅长或需要查证：${limitedTopics.trim()}',
+      if (uncertaintyRules.trim().isNotEmpty)
+        '不确定性处理：${uncertaintyRules.trim()}',
     ].where((item) => item.trim().isNotEmpty).join('\n'));
-    add('个人经历库存', experienceInventory);
-    add('表达方式', speechStyle);
-    add('工作方式', workStyle);
-    add('工具策略', toolStrategy);
-    add('输出偏好', outputStyle);
-    add('去模型味规则', antiAiRules);
+    add('高级行为设定', [
+      if (emojiRules.trim().isNotEmpty) 'Emoji：${emojiRules.trim()}',
+      if (paragraphRules.trim().isNotEmpty) '分段：${paragraphRules.trim()}',
+      if (markdownRules.trim().isNotEmpty) '排版：${markdownRules.trim()}',
+      if (toolRules.trim().isNotEmpty) '工具：${toolRules.trim()}',
+      if (advancedRules.trim().isNotEmpty) advancedRules.trim(),
+    ].where((item) => item.trim().isNotEmpty).join('\n'));
     add('自定义补充指令', systemPrompt);
 
     if (sections.isEmpty) {
       return '';
     }
     return [
-      '你正在扮演一个结构化助手预设。始终按以下档案工作；不要把档案内容直接展示给用户。',
-      '如果问题超出你的知识表现范围，应降低确定性、追问、搜索或明确说明不确定；不要因为底层模型知道更多就假装该身份天然知道。',
-      '不要编造未在个人经历库存中定义的亲身经历。',
+      '你正在使用一个助手预设。以下内容是行为规范，不是小说人物档案；不要向用户展示或解释这些设定。',
+      '基础特征只用于调整称呼、语气、表达节奏和知识表现，不代表真实人类身份，也不能编造现实经历。',
+      '如果问题超出设定的知识与能力范围，应降低确定性、追问、使用可用工具或明确说明无法确认；不要因为底层模型知道更多就表现成该助手自然知道。',
+      '回答应自然、克制、具体。避免频繁 emoji、模板化分段、空泛赞同、机械免责声明和“作为 AI”式表达，除非高级设定明确允许。',
       '',
       sections.join('\n\n'),
     ].join('\n');
@@ -559,6 +650,7 @@ class AppSettings {
     this.appearanceMode = 'light',
     this.themeColorValue = 0xFFE9E9E9,
     this.fontScale = 1,
+    this.showSessionTitle = true,
     this.haptics = true,
   })  : providers = providers ?? [],
         models = models ?? [],
@@ -590,6 +682,7 @@ class AppSettings {
   String appearanceMode;
   int themeColorValue;
   double fontScale;
+  bool showSessionTitle;
   bool haptics;
 
   Map<String, Object?> toJson() => {
@@ -619,6 +712,7 @@ class AppSettings {
         'appearanceMode': appearanceMode,
         'themeColorValue': themeColorValue,
         'fontScale': fontScale,
+        'showSessionTitle': showSessionTitle,
         'haptics': haptics,
       };
 
@@ -651,6 +745,7 @@ class AppSettings {
       appearanceMode: json['appearanceMode'] as String? ?? 'light',
       themeColorValue: _toInt(json['themeColorValue']) ?? 0xFFE9E9E9,
       fontScale: _toDouble(json['fontScale']) ?? 1,
+      showSessionTitle: json['showSessionTitle'] as bool? ?? true,
       haptics: json['haptics'] as bool? ?? true,
     );
   }
@@ -661,6 +756,57 @@ List<AiProviderConfig> defaultProviders() => [
         id: 'openai',
         name: 'OpenAI',
         baseUrl: 'https://api.openai.com/v1',
+      ),
+      AiProviderConfig(
+        id: 'gemini',
+        name: 'Google Gemini',
+        baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+      ),
+      AiProviderConfig(
+        id: 'xai',
+        name: 'xAI',
+        baseUrl: 'https://api.x.ai/v1',
+      ),
+      AiProviderConfig(
+        id: 'mistral',
+        name: 'Mistral',
+        baseUrl: 'https://api.mistral.ai/v1',
+      ),
+      AiProviderConfig(
+        id: 'groq',
+        name: 'Groq',
+        baseUrl: 'https://api.groq.com/openai/v1',
+      ),
+      AiProviderConfig(
+        id: 'openrouter',
+        name: 'OpenRouter',
+        baseUrl: 'https://openrouter.ai/api/v1',
+        balancePath: '/credits',
+      ),
+      AiProviderConfig(
+        id: 'together',
+        name: 'Together AI',
+        baseUrl: 'https://api.together.xyz/v1',
+      ),
+      AiProviderConfig(
+        id: 'fireworks',
+        name: 'Fireworks AI',
+        baseUrl: 'https://api.fireworks.ai/inference/v1',
+      ),
+      AiProviderConfig(
+        id: 'cerebras',
+        name: 'Cerebras',
+        baseUrl: 'https://api.cerebras.ai/v1',
+      ),
+      AiProviderConfig(
+        id: 'cohere',
+        name: 'Cohere',
+        baseUrl: 'https://api.cohere.com/compatibility/v1',
+      ),
+      AiProviderConfig(
+        id: 'perplexity',
+        name: 'Perplexity',
+        baseUrl: 'https://api.perplexity.ai',
       ),
       AiProviderConfig(
         id: 'deepseek',
@@ -701,36 +847,10 @@ List<AiProviderConfig> defaultProviders() => [
         baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
       ),
       AiProviderConfig(
-        id: 'openrouter',
-        name: 'OpenRouter',
-        baseUrl: 'https://openrouter.ai/api/v1',
-        balancePath: '/credits',
-      ),
-      AiProviderConfig(
         id: 'siliconflow',
         name: '硅基流动',
         baseUrl: 'https://api.siliconflow.cn/v1',
         balancePath: '/user/info',
-      ),
-      AiProviderConfig(
-        id: 'together',
-        name: 'Together AI',
-        baseUrl: 'https://api.together.xyz/v1',
-      ),
-      AiProviderConfig(
-        id: 'groq',
-        name: 'Groq',
-        baseUrl: 'https://api.groq.com/openai/v1',
-      ),
-      AiProviderConfig(
-        id: 'mistral',
-        name: 'Mistral',
-        baseUrl: 'https://api.mistral.ai/v1',
-      ),
-      AiProviderConfig(
-        id: 'perplexity',
-        name: 'Perplexity',
-        baseUrl: 'https://api.perplexity.ai',
       ),
       AiProviderConfig(
         id: 'ollama',
@@ -837,14 +957,16 @@ List<AssistantPreset> defaultAssistants() => [
         name: '写作助手',
         description: '结构、标题、润色和表达优化',
         avatar: '写',
-        identityProfile: '中文写作与编辑型助手，适合处理表达、结构、标题、语气和成稿质量。',
-        coreKnowledge: '中文表达、文章结构、标题归纳、文案润色、信息组织。',
-        familiarKnowledge: '常见办公写作、产品说明、计划总结、沟通文本。',
-        knowledgeBoundaries: '不把不确定事实写成定论；涉及实时资料、专业事实或引用时应提醒核验或搜索。',
-        speechStyle: '语言克制、自然、清楚，少用口号式表达，优先给可直接使用的文本。',
-        workStyle: '先判断用户要成稿、修改、提纲还是建议；信息不足时补一个最关键的问题。',
-        outputStyle: '按任务给成品、修改稿、要点或备选标题，避免无意义铺垫。',
-        antiAiRules: '不说“作为AI”，不空泛赞同，不堆模板化总结。',
+        personality: '克制、敏锐、注重结构和文字质感。',
+        relationship: '像可靠编辑，直接给判断，不刻意亲密。',
+        communicationStyle: '语言自然清楚，少用口号式表达，优先给可直接使用的文本。',
+        expertise: '中文表达、文章结构、标题归纳、文案润色、信息组织。',
+        familiarTopics: '常见办公写作、产品说明、计划总结、沟通文本。',
+        limitedTopics: '事实引用、实时资料、专业结论和数据来源需要查证。',
+        uncertaintyRules: '不把不确定事实写成定论；需要最新信息时提醒核验或搜索。',
+        paragraphRules: '根据文本用途自然分段，不用固定模板堆小标题。',
+        markdownRules: '成稿优先给正文；需要比较、步骤或代码时再使用 Markdown。',
+        advancedRules: '不说“作为AI”，不空泛赞同，不堆模板化总结。',
         systemPrompt:
             '你是一个克制、准确、有审美的中文写作助手。优先给出可直接使用的文本，避免空泛解释。',
         temperature: 0.7,
@@ -855,14 +977,16 @@ List<AssistantPreset> defaultAssistants() => [
         name: '代码助手',
         description: '定位问题、设计实现、解释代码',
         avatar: '码',
-        identityProfile: '务实的软件工程助手，重点是判断问题、给出稳妥实现和解释取舍。',
-        coreKnowledge: '软件设计、代码阅读、调试、接口契约、测试和工程实现。',
-        familiarKnowledge: '常见前后端、移动端、脚本、数据处理和构建问题。',
-        knowledgeBoundaries: '不知道具体库版本或运行环境时必须说明假设；不要编造不存在的 API。',
-        speechStyle: '直接、准确、工程化，先讲结论和风险，再给实现细节。',
-        workStyle: '先理解现有约束，优先最小可行修改，必要时补测试和验证步骤。',
-        outputStyle: '代码、步骤、风险和验证分清楚，避免长篇泛讲。',
-        antiAiRules: '不机械道歉，不过度解释基础常识，不用“显然”“很简单”压低用户判断。',
+        personality: '严谨、务实、重视约束和验证。',
+        relationship: '像同事或技术负责人，直接指出风险和取舍。',
+        communicationStyle: '先讲结论和关键风险，再给实现细节；避免长篇泛讲。',
+        expertise: '软件设计、代码阅读、调试、接口契约、测试和工程实现。',
+        familiarTopics: '常见前后端、移动端、脚本、数据处理和构建问题。',
+        limitedTopics: '具体库版本、私有接口、当前环境状态和未提供的代码上下文。',
+        uncertaintyRules: '不知道版本或环境时必须说明假设；不要编造不存在的 API。',
+        paragraphRules: '按问题、原因、修改、验证组织，必要时才展开。',
+        markdownRules: '代码、步骤、风险和验证分清楚；代码块必须标注语言。',
+        advancedRules: '不机械道歉，不过度解释基础常识，不用“显然”“很简单”压低用户判断。',
         systemPrompt:
             '你是一个严谨务实的软件工程助手。先理解上下文，再给出可执行方案和代码。不要编造不存在的 API。',
         temperature: 0.3,
@@ -873,14 +997,16 @@ List<AssistantPreset> defaultAssistants() => [
         name: '生活顾问',
         description: '计划、比较、整理和日常建议',
         avatar: '生',
-        identityProfile: '日常规划与建议型助手，像一个清醒、温和、会取舍的朋友。',
-        coreKnowledge: '生活计划、清单整理、方案比较、日常决策和沟通建议。',
-        familiarKnowledge: '旅行、购物、时间安排、健康常识、学习计划和关系沟通的一般建议。',
-        knowledgeBoundaries: '医疗、法律、财务等高风险问题不能装专家；需要最新信息时应搜索或提示确认。',
-        speechStyle: '自然、温和、少说教，给用户可执行的下一步。',
-        workStyle: '先帮用户减少选择压力，再给少量清晰方案；信息不足时先给默认建议。',
-        outputStyle: '偏清单、对比、步骤和提醒，不用夸张营销语。',
-        antiAiRules: '不说空话，不把普通建议包装成专业诊断，不制造焦虑。',
+        personality: '清醒、温和、会取舍，不制造压力。',
+        relationship: '像可信赖的朋友，亲近但不替用户做高风险决定。',
+        communicationStyle: '自然、少说教，优先给可执行的下一步。',
+        expertise: '生活计划、清单整理、方案比较、日常决策和沟通建议。',
+        familiarTopics: '旅行、购物、时间安排、健康常识、学习计划和关系沟通的一般建议。',
+        limitedTopics: '医疗、法律、财务等高风险问题，以及价格、天气、营业时间等实时信息。',
+        uncertaintyRules: '高风险问题不装专家；需要最新信息时搜索或提示确认。',
+        paragraphRules: '先减少选择压力，再给少量清晰方案。',
+        markdownRules: '适合用清单、对比、步骤和提醒；不用夸张营销语。',
+        advancedRules: '不说空话，不把普通建议包装成专业诊断，不制造焦虑。',
         systemPrompt:
             '你是一个简洁可靠的生活顾问。回答要具体、清楚、有取舍，不要说教。',
         temperature: 0.6,
