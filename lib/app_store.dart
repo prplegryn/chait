@@ -6,6 +6,7 @@ import 'package:flutter_background/flutter_background.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'app_logger.dart';
 import 'ai_client.dart';
 import 'mcp_client.dart';
 import 'models.dart';
@@ -67,6 +68,7 @@ class AppStore extends ChangeNotifier {
   }
 
   Future<void> load() async {
+    AppLogger.instance.info('store.load', 'start');
     try {
       final prefs = await SharedPreferences.getInstance();
       assistants
@@ -75,9 +77,16 @@ class AppStore extends ChangeNotifier {
       if (assistants.isEmpty) {
         assistants.addAll(defaultAssistants());
       }
+      AppLogger.instance.info('store.load', 'assistants=${assistants.length}');
 
       settings = _decodeSettings(prefs.getString(_settingsKey));
       _ensureProviders();
+      AppLogger.instance.info(
+        'store.load',
+        'providers=${settings.providers.length} '
+            'models=${settings.models.length} '
+            'searchProviders=${settings.searchProviders.length}',
+      );
       apiKey = await _secureStorage.read(key: _apiKeyKey) ?? '';
       final providerKeyJson =
           await _secureStorage.read(key: _providerApiKeysKey);
@@ -101,12 +110,15 @@ class AppStore extends ChangeNotifier {
       if (sessions.isEmpty) {
         sessions.add(_newSession(currentAssistantId));
       }
+      AppLogger.instance.info('store.load', 'sessions=${sessions.length}');
       currentSessionId =
           prefs.getString(_currentSessionKey) ?? sessions.first.id;
 
       _repairSelection();
       _sortSessions();
-    } catch (error) {
+      AppLogger.instance.info('store.load', 'complete');
+    } catch (error, stack) {
+      AppLogger.instance.error('store.load', error, stack);
       startupError = error.toString();
       _resetToUsableDefaults();
     } finally {
@@ -116,6 +128,10 @@ class AppStore extends ChangeNotifier {
   }
 
   void _resetToUsableDefaults() {
+    AppLogger.instance.warning(
+      'store.load',
+      'resetting to usable defaults after startup failure',
+    );
     assistants
       ..clear()
       ..addAll(defaultAssistants());
@@ -677,6 +693,12 @@ class AppStore extends ChangeNotifier {
     _activeClient = AiClient();
     try {
       final target = _resolveModelTarget(session);
+      AppLogger.instance.info(
+        'chat.send',
+        'start session=${session.id} chars=${trimmed.length} '
+            'provider=${target.provider.id} model=${target.model.id} '
+            'search=${_hasUsableSearch(session)}',
+      );
       final assistant = assistantForSession(session);
       final sentWithTools = await _trySendWithSearchTools(
         session: session,
@@ -696,7 +718,12 @@ class AppStore extends ChangeNotifier {
       if (_cancelRequested && assistantMessage.content.trim().isEmpty) {
         assistantMessage.content = '已停止生成。';
       }
-    } catch (error) {
+      AppLogger.instance.info(
+        'chat.send',
+        'complete session=${session.id} answerChars=${assistantMessage.content.length}',
+      );
+    } catch (error, stack) {
+      AppLogger.instance.error('chat.send', error, stack);
       final message = friendlyError(error);
       assistantMessage.error = message;
       if (assistantMessage.content.trim().isEmpty) {
@@ -833,6 +860,10 @@ class AppStore extends ChangeNotifier {
     final assistant = assistantForSession(session);
     try {
       final target = _resolveSpecificModelTarget(settings.titleModelId);
+      AppLogger.instance.info(
+        'title.generate',
+        'start session=$sessionId provider=${target.provider.id} model=${target.model.id}',
+      );
       final title = await AiClient().generateText(
         settings: settings,
         apiKey: target.apiKey,
@@ -858,10 +889,15 @@ class AppStore extends ChangeNotifier {
         session.title = cleaned;
         notifyListeners();
         await save();
+        AppLogger.instance.info(
+          'title.generate',
+          'complete session=$sessionId chars=${cleaned.length}',
+        );
       } else {
         await _setFallbackTitle(session, fallbackPrompt);
       }
-    } catch (_) {
+    } catch (error, stack) {
+      AppLogger.instance.error('title.generate', error, stack);
       await _setFallbackTitle(session, fallbackPrompt);
     }
   }
@@ -1179,14 +1215,24 @@ class AppStore extends ChangeNotifier {
     }
     try {
       final provider = searchProviderById(settings.defaultSearchProviderId);
+      AppLogger.instance.info(
+        'search',
+        'start provider=${provider.id} queryChars=${prompt.length}',
+      );
       final client = SearchClient();
       final response = await client.searchDetailed(
         provider: provider,
         apiKey: apiKeyForSearchProvider(provider.id),
         query: prompt,
       );
+      AppLogger.instance.info(
+        'search',
+        'complete provider=${provider.id} items=${response.items.length} '
+            'images=${response.images.length} answer=${response.answer.isNotEmpty}',
+      );
       return _SearchOutcome(context: client.formatContext(response));
-    } catch (error) {
+    } catch (error, stack) {
+      AppLogger.instance.error('search', error, stack);
       return _SearchOutcome(
         error:
             '本轮尝试联网搜索但失败：${friendlyError(error)}。请不要编造实时资料；如果问题需要最新信息，请说明当前无法确认。',
@@ -1201,6 +1247,10 @@ class AppStore extends ChangeNotifier {
     required _ResolvedModelTarget target,
   }) async {
     if (!_hasUsableSearch(session) || target.model.supportsTools == false) {
+      AppLogger.instance.info(
+        'tools',
+        'skip hasSearch=${_hasUsableSearch(session)} supportsTools=${target.model.supportsTools}',
+      );
       return false;
     }
 
@@ -1214,6 +1264,10 @@ class AppStore extends ChangeNotifier {
     while (!_cancelRequested) {
       late final AiChatResult result;
       try {
+        AppLogger.instance.info(
+          'tools',
+          'request round=$toolRounds provider=${target.provider.id} model=${target.model.id}',
+        );
         result = await _activeClient!.sendChat(
           config: AiRequestConfig(
             settings: settings,
@@ -1244,12 +1298,18 @@ class AppStore extends ChangeNotifier {
         if (toolRounds == 0 &&
             assistantMessage.content.trim().isEmpty &&
             _looksLikeUnsupportedToolError(error)) {
+          AppLogger.instance.warning(
+            'tools',
+            'provider rejected tool call, falling back',
+            error,
+          );
           return false;
         }
         rethrow;
       }
 
       if (result.toolCalls.isEmpty) {
+        AppLogger.instance.info('tools', 'complete without tool calls');
         return true;
       }
 
@@ -1266,6 +1326,7 @@ class AppStore extends ChangeNotifier {
         if (_cancelRequested) {
           return true;
         }
+        AppLogger.instance.info('tools', 'call ${call.name}');
         assistantMessage.status =
             call.name == 'search_web' ? '搜索中' : '处理中...';
         notifyListeners();

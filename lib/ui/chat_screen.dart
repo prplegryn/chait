@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../app_logger.dart';
 import '../app_store.dart';
 import '../models.dart';
 import 'message_renderer.dart';
@@ -49,11 +50,17 @@ class _ChatScreenState extends State<ChatScreen> {
   final _focusNode = FocusNode();
   bool _stickToBottom = true;
   bool _forceNextScroll = false;
+  bool _loggedFirstBuild = false;
   String _lastSessionId = '';
 
   @override
   void initState() {
     super.initState();
+    AppLogger.instance.info(
+      'chat.ui',
+      'init session=${widget.store.currentSessionId} '
+          'messages=${widget.store.currentSession.messages.length}',
+    );
     widget.store.addListener(_onStoreChanged);
     _scrollController.addListener(_onScroll);
     _lastSessionId = widget.store.currentSessionId;
@@ -61,6 +68,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    AppLogger.instance.info('chat.ui', 'dispose');
     widget.store.removeListener(_onStoreChanged);
     _scrollController.removeListener(_onScroll);
     _inputController.dispose();
@@ -76,6 +84,11 @@ class _ChatScreenState extends State<ChatScreen> {
     final sessionChanged = widget.store.currentSessionId != _lastSessionId;
     if (sessionChanged) {
       _lastSessionId = widget.store.currentSessionId;
+      AppLogger.instance.info(
+        'chat.ui',
+        'session changed id=$_lastSessionId '
+            'messages=${widget.store.currentSession.messages.length}',
+      );
       _forceNextScroll = true;
     }
     final shouldScroll = _forceNextScroll || _stickToBottom;
@@ -203,6 +216,14 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     final session = widget.store.currentSession;
     final assistant = widget.store.currentAssistant;
+    if (!_loggedFirstBuild) {
+      _loggedFirstBuild = true;
+      AppLogger.instance.info(
+        'chat.ui',
+        'first build session=${session.id} messages=${session.messages.length} '
+            'assistant=${assistant.id}',
+      );
+    }
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: _background(context),
