@@ -39,16 +39,18 @@ class MessageRenderer extends StatelessWidget {
         for (var index = 0; index < blocks.length; index += 1)
           _RevealBlock(
             enabled: animate,
-            token: '${index}_${blocks[index].kind}_${blocks[index].text.length}',
+            token: '${index}_${blocks[index].kind}',
             child: Padding(
-            padding: EdgeInsets.only(top: index == 0 ? 0 : _gapBefore(blocks[index])),
-            child: _BlockView(
-              block: blocks[index],
-              textColor: textColor,
-              mutedColor: mutedColor,
-              codeBackground: codeBackground,
-              isUser: isUser,
-            ),
+              padding: EdgeInsets.only(
+                top: index == 0 ? 0 : _gapBefore(blocks[index]),
+              ),
+              child: _BlockView(
+                block: blocks[index],
+                textColor: textColor,
+                mutedColor: mutedColor,
+                codeBackground: codeBackground,
+                isUser: isUser,
+              ),
             ),
           ),
       ],
