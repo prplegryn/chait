@@ -224,7 +224,9 @@ class _ChatScreenState extends State<ChatScreen> {
                             top: MediaQuery.paddingOf(context).top + 116,
                             bottom: 108,
                           ),
-                          child: const _EmptyChat(),
+                          child: _EmptyChat(
+                            startupError: widget.store.startupError,
+                          ),
                         )
                       : ListView.builder(
                           controller: _scrollController,
@@ -493,52 +495,63 @@ class _ChatTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onLongPress: onLongPress,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          _TitleAvatar(assistant: assistant),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Column(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth =
+            constraints.maxWidth.isFinite ? constraints.maxWidth : 220.0;
+        final textWidth = maxWidth <= 80
+            ? maxWidth
+            : (maxWidth - 46).clamp(80.0, maxWidth).toDouble();
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onLongPress: onLongPress,
+          child: Center(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  assistant.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: _textColor(context),
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    height: 1.1,
-                    letterSpacing: 0,
+                _TitleAvatar(assistant: assistant),
+                const SizedBox(width: 8),
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: textWidth),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        assistant.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: _textColor(context),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          height: 1.1,
+                          letterSpacing: 0,
+                        ),
+                      ),
+                      if (showSessionTitle) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          sessionTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: _mutedColor(context),
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w400,
+                            height: 1.1,
+                            letterSpacing: 0,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
-                if (showSessionTitle) ...[
-                  const SizedBox(height: 3),
-                  Text(
-                    sessionTitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: _mutedColor(context),
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w400,
-                      height: 1.1,
-                      letterSpacing: 0,
-                    ),
-                  ),
-                ],
               ],
             ),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -577,11 +590,41 @@ class _TitleAvatar extends StatelessWidget {
 }
 
 class _EmptyChat extends StatelessWidget {
-  const _EmptyChat();
+  const _EmptyChat({required this.startupError});
+
+  final String startupError;
 
   @override
   Widget build(BuildContext context) {
-    return const SizedBox.expand();
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            _background(context),
+            _softColor(context).withValues(alpha: 0.30),
+            _background(context),
+          ],
+          stops: const [0, 0.58, 1],
+        ),
+      ),
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 34),
+          child: Text(
+            startupError.trim().isEmpty ? '问点什么' : '已使用默认数据启动',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: _mutedColor(context).withValues(alpha: 0.46),
+              fontSize: 13,
+              height: 1.45,
+              letterSpacing: 0,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

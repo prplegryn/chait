@@ -37,6 +37,7 @@ class AppStore extends ChangeNotifier {
   String currentAssistantId = 'assistant-writing';
   bool isReady = false;
   bool isSending = false;
+  String startupError = '';
 
   AiClient? _activeClient;
   bool _cancelRequested = false;
@@ -66,44 +67,68 @@ class AppStore extends ChangeNotifier {
   }
 
   Future<void> load() async {
-    final prefs = await SharedPreferences.getInstance();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      assistants
+        ..clear()
+        ..addAll(_decodeAssistantList(prefs.getString(_assistantsKey)));
+      if (assistants.isEmpty) {
+        assistants.addAll(defaultAssistants());
+      }
+
+      settings = _decodeSettings(prefs.getString(_settingsKey));
+      _ensureProviders();
+      apiKey = await _secureStorage.read(key: _apiKeyKey) ?? '';
+      final providerKeyJson =
+          await _secureStorage.read(key: _providerApiKeysKey);
+      providerApiKeys
+        ..clear()
+        ..addAll(_decodeStringMap(providerKeyJson));
+      final searchProviderKeyJson =
+          await _secureStorage.read(key: _searchProviderApiKeysKey);
+      searchProviderApiKeys
+        ..clear()
+        ..addAll(_decodeStringMap(searchProviderKeyJson));
+      if (apiKey.isNotEmpty && providerApiKeys.isEmpty) {
+        providerApiKeys[settings.providers.first.id] = apiKey;
+      }
+      currentAssistantId =
+          prefs.getString(_currentAssistantKey) ?? assistants.first.id;
+
+      sessions
+        ..clear()
+        ..addAll(_decodeSessionList(prefs.getString(_sessionsKey)));
+      if (sessions.isEmpty) {
+        sessions.add(_newSession(currentAssistantId));
+      }
+      currentSessionId =
+          prefs.getString(_currentSessionKey) ?? sessions.first.id;
+
+      _repairSelection();
+      _sortSessions();
+    } catch (error) {
+      startupError = error.toString();
+      _resetToUsableDefaults();
+    } finally {
+      isReady = true;
+      notifyListeners();
+    }
+  }
+
+  void _resetToUsableDefaults() {
     assistants
       ..clear()
-      ..addAll(_decodeAssistantList(prefs.getString(_assistantsKey)));
-    if (assistants.isEmpty) {
-      assistants.addAll(defaultAssistants());
-    }
-
-    settings = _decodeSettings(prefs.getString(_settingsKey));
-    _ensureProviders();
-    apiKey = await _secureStorage.read(key: _apiKeyKey) ?? '';
-    final providerKeyJson = await _secureStorage.read(key: _providerApiKeysKey);
-    providerApiKeys
-      ..clear()
-      ..addAll(_decodeStringMap(providerKeyJson));
-    final searchProviderKeyJson =
-        await _secureStorage.read(key: _searchProviderApiKeysKey);
-    searchProviderApiKeys
-      ..clear()
-      ..addAll(_decodeStringMap(searchProviderKeyJson));
-    if (apiKey.isNotEmpty && providerApiKeys.isEmpty) {
-      providerApiKeys[settings.providers.first.id] = apiKey;
-    }
-    currentAssistantId =
-        prefs.getString(_currentAssistantKey) ?? assistants.first.id;
-
+      ..addAll(defaultAssistants());
+    settings = AppSettings()..providers.addAll(defaultProviders());
+    settings.searchProviders.addAll(defaultSearchProviders());
     sessions
       ..clear()
-      ..addAll(_decodeSessionList(prefs.getString(_sessionsKey)));
-    if (sessions.isEmpty) {
-      sessions.add(_newSession(currentAssistantId));
-    }
-    currentSessionId = prefs.getString(_currentSessionKey) ?? sessions.first.id;
-
-    _repairSelection();
-    _sortSessions();
-    isReady = true;
-    notifyListeners();
+      ..add(_newSession(assistants.first.id));
+    currentAssistantId = assistants.first.id;
+    currentSessionId = sessions.first.id;
+    apiKey = '';
+    providerApiKeys.clear();
+    searchProviderApiKeys.clear();
   }
 
   Future<void> save() async {
