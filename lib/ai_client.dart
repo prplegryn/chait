@@ -218,18 +218,6 @@ class AiClient {
     return models..sort((a, b) => a.name.compareTo(b.name));
   }
 
-  AiModelConfig modelFromId({
-    required AiProviderConfig provider,
-    required String modelId,
-    bool enabled = true,
-  }) {
-    return _parseModel(
-      provider,
-      {'id': modelId.trim()},
-      DateTime.now(),
-    )..enabled = enabled;
-  }
-
   Future<String> fetchBalance({
     required AiProviderConfig provider,
     required String apiKey,
@@ -496,18 +484,15 @@ class AiClient {
       ..._stringList(architecture['input_modalities']),
       ..._stringList(architecture['inputModalities']),
       ..._stringList(raw['modalities']),
-      ..._inferredInputModalities(provider, id),
-    };
+    }.toList()
+      ..sort();
     final outputModalities = <String>{
       ..._stringList(raw['output_modalities']),
       ..._stringList(raw['outputModalities']),
       ..._stringList(architecture['output_modalities']),
       ..._stringList(architecture['outputModalities']),
-      ..._inferredOutputModalities(provider, id),
-    };
-    final inputModalityList = inputModalities.toList()..sort();
-    final outputModalityList = outputModalities.toList()..sort();
-    final inferredTools = _inferredSupportsTools(provider, id);
+    }.toList()
+      ..sort();
 
     return AiModelConfig(
       id: modelConfigId(provider.id, id),
@@ -526,11 +511,10 @@ class AiClient {
           'max_input_tokens',
         ],
       ) ??
-          _toInt(topProvider['context_length']) ??
-          _inferredContextWindow(provider, id),
+          _toInt(topProvider['context_length']),
       maxOutputTokens: _firstInt(
-            raw,
-            const [
+        raw,
+        const [
           'max_output_tokens',
           'maxOutputTokens',
           'max_completion_tokens',
@@ -539,18 +523,16 @@ class AiClient {
       ),
       supportsTools: _boolCapability(
         raw,
-            capabilities,
-            supportedParameters,
-            const ['tools', 'tool_calls', 'function_calling', 'function_call'],
-          ) ??
-          inferredTools,
+        capabilities,
+        supportedParameters,
+        const ['tools', 'tool_calls', 'function_calling', 'function_call'],
+      ),
       supportsToolChoice: _boolCapability(
-            raw,
-            capabilities,
-            supportedParameters,
-            const ['tool_choice'],
-          ) ??
-          inferredTools,
+        raw,
+        capabilities,
+        supportedParameters,
+        const ['tool_choice'],
+      ),
       supportsVision: _boolCapability(
             raw,
             capabilities,
@@ -559,19 +541,17 @@ class AiClient {
           ) ??
           inputModalities.any((item) => item.contains('image')),
       supportsJsonMode: _boolCapability(
-            raw,
-            capabilities,
-            supportedParameters,
-            const ['json', 'json_mode', 'response_format'],
-          ) ??
-          _inferredSupportsJson(provider, id),
+        raw,
+        capabilities,
+        supportedParameters,
+        const ['json', 'json_mode', 'response_format'],
+      ),
       supportsStructuredOutput: _boolCapability(
-            raw,
-            capabilities,
-            supportedParameters,
-            const ['structured_outputs', 'json_schema'],
-          ) ??
-          _inferredSupportsStructuredOutput(provider, id),
+        raw,
+        capabilities,
+        supportedParameters,
+        const ['structured_outputs', 'json_schema'],
+      ),
       supportsStreaming: _boolCapability(
             raw,
             capabilities,
@@ -579,255 +559,11 @@ class AiClient {
             const ['stream', 'streaming'],
           ) ??
           true,
-      inputModalities: inputModalityList,
-      outputModalities: outputModalityList,
+      inputModalities: inputModalities,
+      outputModalities: outputModalities,
       rawJson: jsonEncode(raw),
       refreshedAt: refreshedAt,
     );
-  }
-
-  List<String> _inferredInputModalities(
-    AiProviderConfig provider,
-    String modelId,
-  ) {
-    final key = _modelKey(provider, modelId);
-    if (_isNonChatModel(key)) {
-      if (_isImageGenerationModel(key)) {
-        return const ['text', 'image'];
-      }
-      return const [];
-    }
-    final values = <String>{'text'};
-    if (_isVisionModel(key)) {
-      values.add('image');
-    }
-    return values.toList();
-  }
-
-  List<String> _inferredOutputModalities(
-    AiProviderConfig provider,
-    String modelId,
-  ) {
-    final key = _modelKey(provider, modelId);
-    if (_isImageGenerationModel(key)) {
-      return const ['image'];
-    }
-    if (key.contains('video') || key.contains('wan2') || key.contains('cogvideo')) {
-      return const ['video'];
-    }
-    if (key.contains('audio') || key.contains('tts') || key.contains('speech')) {
-      return const ['audio'];
-    }
-    return _isNonChatModel(key) ? const [] : const ['text'];
-  }
-
-  int? _inferredContextWindow(AiProviderConfig provider, String modelId) {
-    final key = _modelKey(provider, modelId);
-    final explicit = _contextFromModelName(key);
-    if (explicit != null) {
-      return explicit;
-    }
-    if (key.contains('openrouter')) {
-      return null;
-    }
-    if (key.contains('gemini')) {
-      return 1000000;
-    }
-    if (key.contains('moonshot') || key.contains('kimi')) {
-      return key.contains('k2') ? 256000 : 128000;
-    }
-    if (key.contains('qwen') || key.contains('dashscope')) {
-      return key.contains('long') ? 1000000 : 128000;
-    }
-    if (key.contains('deepseek')) {
-      return 64000;
-    }
-    if (key.contains('glm') || key.contains('zhipu')) {
-      return 128000;
-    }
-    if (key.contains('gpt-4.1')) {
-      return 1047576;
-    }
-    if (key.contains('gpt-4o') || key.contains('gpt-5')) {
-      return 128000;
-    }
-    if (key.contains('mistral') || key.contains('codestral')) {
-      return 128000;
-    }
-    if (key.contains('llama-4') || key.contains('maverick') || key.contains('scout')) {
-      return 128000;
-    }
-    return null;
-  }
-
-  int? _contextFromModelName(String key) {
-    final match = RegExp(r'(^|[^a-z0-9])(\d{1,4})(k|m)([^a-z0-9]|$)')
-        .firstMatch(key);
-    if (match == null) {
-      return null;
-    }
-    final value = int.tryParse(match.group(2) ?? '');
-    final unit = match.group(3);
-    if (value == null) {
-      return null;
-    }
-    return unit == 'm' ? value * 1000000 : value * 1000;
-  }
-
-  bool? _inferredSupportsTools(AiProviderConfig provider, String modelId) {
-    final key = _modelKey(provider, modelId);
-    if (_isNonChatModel(key)) {
-      return false;
-    }
-    if (_hasAny(key, const [
-      'openai',
-      'gpt-',
-      'o1',
-      'o3',
-      'o4',
-      'gemini',
-      'xai',
-      'grok',
-      'mistral',
-      'codestral',
-      'groq',
-      'openrouter',
-      'together',
-      'fireworks',
-      'cerebras',
-      'cohere',
-      'deepseek',
-      'qwen',
-      'dashscope',
-      'moonshot',
-      'kimi',
-      'zhipu',
-      'glm',
-      'hunyuan',
-      'qianfan',
-      'siliconflow',
-      'perplexity',
-    ])) {
-      return true;
-    }
-    return null;
-  }
-
-  bool? _inferredSupportsJson(AiProviderConfig provider, String modelId) {
-    final key = _modelKey(provider, modelId);
-    if (_isNonChatModel(key)) {
-      return false;
-    }
-    return _hasAny(key, const [
-      'openai',
-      'gpt-',
-      'gemini',
-      'grok',
-      'mistral',
-      'groq',
-      'openrouter',
-      'deepseek',
-      'qwen',
-      'kimi',
-      'glm',
-      'hunyuan',
-      'siliconflow',
-      'cerebras',
-      'cohere',
-    ]);
-  }
-
-  bool? _inferredSupportsStructuredOutput(
-    AiProviderConfig provider,
-    String modelId,
-  ) {
-    final key = _modelKey(provider, modelId);
-    if (_isNonChatModel(key)) {
-      return false;
-    }
-    return _hasAny(key, const [
-      'openai',
-      'gpt-',
-      'gemini',
-      'grok',
-      'mistral',
-      'groq',
-      'openrouter',
-      'qwen',
-      'kimi',
-      'glm',
-      'deepseek',
-    ]);
-  }
-
-  bool _isVisionModel(String key) {
-    return _hasAny(key, const [
-      'vision',
-      'image-input',
-      'image_url',
-      'multimodal',
-      'omni',
-      'gpt-4o',
-      'gpt-5',
-      'gemini',
-      'qwen-vl',
-      'qwen2-vl',
-      'qwen2.5-vl',
-      'qwen3-vl',
-      'glm-4v',
-      'glm-4.1v',
-      'llava',
-      'maverick',
-      'scout',
-      'pixtral',
-      'vl-',
-      '-vl',
-    ]);
-  }
-
-  bool _isImageGenerationModel(String key) {
-    return _hasAny(key, const [
-      'gpt-image',
-      'dall-e',
-      'imagen',
-      'nano-banana',
-      'text-to-image',
-      'image-generation',
-      'cogview',
-      'wanx',
-      'kolors',
-      'flux',
-      'stable-diffusion',
-      'grok-imagine',
-    ]);
-  }
-
-  bool _isNonChatModel(String key) {
-    return _isImageGenerationModel(key) ||
-        _hasAny(key, const [
-          'embedding',
-          'embed',
-          'rerank',
-          'moderation',
-          'whisper',
-          'tts',
-          'speech',
-          'audio',
-          'video',
-        ]);
-  }
-
-  bool _hasAny(String source, List<String> patterns) {
-    return patterns.any(source.contains);
-  }
-
-  String _modelKey(AiProviderConfig provider, String modelId) {
-    return [
-      provider.id,
-      provider.name,
-      provider.baseUrl,
-      modelId,
-    ].join(' ').toLowerCase();
   }
 
   bool _hasUsefulMetadata(Map<String, Object?> raw) {

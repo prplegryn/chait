@@ -38,8 +38,6 @@ jobs:
         run: |
           mkdir -p android/app/src/main
           cp ci/android/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
-          mkdir -p android/app/src/main/kotlin/com/prplegryn/chait
-          cp ci/android/MainActivity.kt android/app/src/main/kotlin/com/prplegryn/chait/MainActivity.kt
           rm -f android/app/build.gradle.kts
           cp ci/android/app-build.gradle android/app/build.gradle
           base64 -d ci/signing/chait-release.jks.base64 > android/app/chait-release.jks
@@ -60,7 +58,7 @@ jobs:
         run: flutter test
 
       - name: Build APK
-        run: flutter build apk --release --dart-define=GIT_SHA=${{ github.sha }}
+        run: flutter build apk --release
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
