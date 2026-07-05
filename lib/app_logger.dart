@@ -163,7 +163,8 @@ class AppLogger {
     return value
         .replaceAllMapped(
           RegExp(
-            r'(?i)(authorization|api[-_ ]?key|apikey|token|password)\s*[:=]\s*[^,\s}\]]+',
+            r'(authorization|api[-_ ]?key|apikey|token|password)\s*[:=]\s*[^,\s}\]]+',
+            caseSensitive: false,
           ),
           (match) => '${match.group(1)}=<redacted>',
         )
