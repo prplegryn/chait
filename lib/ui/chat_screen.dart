@@ -137,6 +137,14 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  Future<void> _renameCurrentSession() async {
+    await _showRenameSessionDialog(
+      context: context,
+      store: widget.store,
+      session: widget.store.currentSession,
+    );
+  }
+
   Future<void> _openComposerMenu() async {
     final searchEnabled =
         widget.store.isSearchEnabledForSession(widget.store.currentSession);
@@ -211,7 +219,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   child: session.messages.isEmpty
                       ? Padding(
                           padding: EdgeInsets.only(
-                            top: MediaQuery.paddingOf(context).top + 116,
+                            top: MediaQuery.paddingOf(context).top + 128,
                             bottom: 108,
                           ),
                           child: _EmptyChat(assistant: assistant),
@@ -222,13 +230,14 @@ class _ChatScreenState extends State<ChatScreen> {
                               ScrollViewKeyboardDismissBehavior.onDrag,
                           padding: EdgeInsets.fromLTRB(
                             20,
-                            MediaQuery.paddingOf(context).top + 124,
+                            MediaQuery.paddingOf(context).top + 138,
                             20,
                             118,
                           ),
                           itemCount: session.messages.length,
                           itemBuilder: (context, index) {
                             return MessageBubble(
+                              key: ValueKey(session.messages[index].id),
                               message: session.messages[index],
                               onRegenerate: widget.store.regenerateLastAnswer,
                             );
@@ -243,6 +252,7 @@ class _ChatScreenState extends State<ChatScreen> {
               showNewChat: session.messages.isNotEmpty,
               onOpenDrawer: () => _scaffoldKey.currentState?.openDrawer(),
               onNewChat: () => widget.store.createSession(),
+              onRenameTitle: _renameCurrentSession,
             ),
             Positioned(
               left: 0,
@@ -263,6 +273,51 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 }
 
+Future<void> _showRenameSessionDialog({
+  required BuildContext context,
+  required AppStore store,
+  required ChatSession session,
+}) async {
+  final controller = TextEditingController(text: session.title);
+  final action = await showDialog<String>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('会话标题'),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        maxLength: 24,
+        cursorColor: _textColor(context),
+        decoration: const InputDecoration(
+          hintText: '输入自定义标题',
+          border: OutlineInputBorder(),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, 'auto'),
+          child: const Text('恢复自动'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, 'save'),
+          child: const Text('保存'),
+        ),
+      ],
+    ),
+  );
+  final title = controller.text;
+  controller.dispose();
+  if (action == 'save') {
+    await store.renameSession(session.id, title);
+  } else if (action == 'auto') {
+    await store.restoreAutoTitle(session.id);
+  }
+}
+
 class _ImmersiveTopBar extends StatelessWidget {
   const _ImmersiveTopBar({
     required this.assistantName,
@@ -270,6 +325,7 @@ class _ImmersiveTopBar extends StatelessWidget {
     required this.showNewChat,
     required this.onOpenDrawer,
     required this.onNewChat,
+    required this.onRenameTitle,
   });
 
   final String assistantName;
@@ -277,6 +333,7 @@ class _ImmersiveTopBar extends StatelessWidget {
   final bool showNewChat;
   final VoidCallback onOpenDrawer;
   final VoidCallback onNewChat;
+  final VoidCallback onRenameTitle;
 
   @override
   Widget build(BuildContext context) {
@@ -288,7 +345,7 @@ class _ImmersiveTopBar extends StatelessWidget {
       right: 0,
       top: 0,
       child: SizedBox(
-        height: top + 118,
+        height: top + 132,
         child: Stack(
           children: [
             Positioned.fill(
@@ -302,14 +359,15 @@ class _ImmersiveTopBar extends StatelessWidget {
                       colors: [
                         Colors.black,
                         Colors.black,
-                        Color(0xB0000000),
+                        Color(0xE0000000),
+                        Color(0x7A000000),
                         Color(0x00000000),
                       ],
-                      stops: [0, 0.48, 0.74, 1],
+                      stops: [0, 0.46, 0.72, 0.90, 1],
                     ).createShader(bounds);
                   },
                   child: BackdropFilter(
-                    filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                    filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
                     child: const ColoredBox(color: Colors.transparent),
                   ),
                 ),
@@ -325,11 +383,12 @@ class _ImmersiveTopBar extends StatelessWidget {
                       bg,
                       bg.withValues(alpha: 0.99),
                       bg.withValues(alpha: 0.94),
-                      bg.withValues(alpha: 0.78),
-                      bg.withValues(alpha: 0.44),
+                      bg.withValues(alpha: 0.90),
+                      bg.withValues(alpha: 0.66),
+                      bg.withValues(alpha: 0.28),
                       bg.withValues(alpha: 0),
                     ],
-                    stops: const [0, 0.32, 0.50, 0.68, 0.84, 1],
+                    stops: const [0, 0.34, 0.50, 0.65, 0.82, 0.94, 1],
                   ),
                 ),
               ),
@@ -350,6 +409,7 @@ class _ImmersiveTopBar extends StatelessWidget {
                       child: _ChatTitle(
                         assistantName: assistantName,
                         sessionTitle: sessionTitle,
+                        onLongPress: onRenameTitle,
                       ),
                     ),
                     AnimatedOpacity(
@@ -381,42 +441,48 @@ class _ChatTitle extends StatelessWidget {
   const _ChatTitle({
     required this.assistantName,
     required this.sessionTitle,
+    required this.onLongPress,
   });
 
   final String assistantName;
   final String sessionTitle;
+  final VoidCallback onLongPress;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          assistantName,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: _textColor(context),
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            height: 1.1,
-            letterSpacing: 0,
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onLongPress: onLongPress,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            assistantName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: _textColor(context),
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              height: 1.1,
+              letterSpacing: 0,
+            ),
           ),
-        ),
-        const SizedBox(height: 3),
-        Text(
-          sessionTitle,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: _mutedColor(context),
-            fontSize: 11,
-            fontWeight: FontWeight.w400,
-            height: 1.1,
-            letterSpacing: 0,
+          const SizedBox(height: 3),
+          Text(
+            sessionTitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: _mutedColor(context),
+              fontSize: 10.5,
+              fontWeight: FontWeight.w400,
+              height: 1.1,
+              letterSpacing: 0,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -507,22 +573,7 @@ class MessageBubble extends StatelessWidget {
                     constraints: BoxConstraints(
                       maxWidth: constraints.maxWidth * 0.82,
                     ),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      curve: Curves.easeOutCubic,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 15,
-                        vertical: 11,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _userBubbleColor(context),
-                        borderRadius: const BorderRadius.only(
-                          topLeft: Radius.circular(20),
-                          topRight: Radius.circular(20),
-                          bottomLeft: Radius.circular(20),
-                          bottomRight: Radius.circular(6),
-                        ),
-                      ),
+                    child: _UserBubbleFrame(
                       child: _MessageContent(message: message),
                     ),
                   ),
@@ -573,6 +624,71 @@ class MessageBubble extends StatelessWidget {
   }
 }
 
+class _UserBubbleFrame extends StatefulWidget {
+  const _UserBubbleFrame({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_UserBubbleFrame> createState() => _UserBubbleFrameState();
+}
+
+class _UserBubbleFrameState extends State<_UserBubbleFrame>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController controller;
+
+  @override
+  void initState() {
+    super.initState();
+    controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 320),
+    )..forward();
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, child) {
+        final value = Curves.easeOutCubic.transform(controller.value);
+        return Opacity(
+          opacity: value,
+          child: Transform.translate(
+            offset: Offset(0, (1 - value) * 10),
+            child: Transform.scale(
+              alignment: Alignment.bottomRight,
+              scale: 0.985 + value * 0.015,
+              child: child,
+            ),
+          ),
+        );
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        padding: const EdgeInsets.fromLTRB(15, 10, 15, 11),
+        decoration: BoxDecoration(
+          color: _userBubbleColor(context),
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(20),
+            topRight: Radius.circular(20),
+            bottomLeft: Radius.circular(20),
+            bottomRight: Radius.circular(6),
+          ),
+        ),
+        child: widget.child,
+      ),
+    );
+  }
+}
+
 class _MessageContent extends StatelessWidget {
   const _MessageContent({required this.message});
 
@@ -589,96 +705,13 @@ class _MessageContent extends StatelessWidget {
     final codeBackground = message.isUser
         ? textColor.withValues(alpha: 0.10)
         : _softColor(context);
-    if (message.isStreaming) {
-      return _StreamingTextContent(text: content, color: textColor);
-    }
     return MessageRenderer(
       content: content,
       textColor: textColor,
       mutedColor: muted,
       codeBackground: codeBackground,
       isUser: message.isUser,
-    );
-  }
-}
-
-class _StreamingTextContent extends StatefulWidget {
-  const _StreamingTextContent({required this.text, required this.color});
-
-  final String text;
-  final Color color;
-
-  @override
-  State<_StreamingTextContent> createState() => _StreamingTextContentState();
-}
-
-class _StreamingTextContentState extends State<_StreamingTextContent>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController controller;
-  String stableText = '';
-  String latestText = '';
-
-  @override
-  void initState() {
-    super.initState();
-    latestText = widget.text;
-    controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 220),
-    );
-    controller.forward(from: 0);
-  }
-
-  @override
-  void didUpdateWidget(covariant _StreamingTextContent oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.text == latestText) {
-      return;
-    }
-    if (widget.text.startsWith(latestText)) {
-      stableText = latestText;
-    } else {
-      stableText = '';
-    }
-    latestText = widget.text;
-    controller.forward(from: 0);
-  }
-
-  @override
-  void dispose() {
-    controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: controller,
-      builder: (context, _) {
-        final value = Curves.easeOutCubic.transform(controller.value);
-        final suffix = latestText.startsWith(stableText)
-            ? latestText.substring(stableText.length)
-            : latestText;
-        return Text.rich(
-          TextSpan(
-            children: [
-              TextSpan(text: stableText),
-              TextSpan(
-                text: suffix,
-                style: TextStyle(
-                  color: widget.color.withValues(alpha: value),
-                ),
-              ),
-            ],
-          ),
-          style: TextStyle(
-            color: widget.color,
-            fontSize: 15.5,
-            height: 1.48,
-            letterSpacing: 0,
-          ),
-        );
-      },
+      animate: message.isStreaming,
     );
   }
 }
@@ -740,20 +773,97 @@ class _GenerationStatusTextState extends State<_GenerationStatusText>
     return AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
-        final opacity = 0.34 + controller.value * 0.34;
+        final pulse = 0.38 + controller.value * 0.28;
+        final isSearching = widget.text.contains('搜索') ||
+            widget.text.contains('读取') ||
+            widget.text.contains('工具');
+        final dots = widget.text.trim() == '...';
         return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 7),
-          child: Text(
-            widget.text,
-            style: TextStyle(
-              color: _mutedColor(context).withValues(alpha: opacity),
-              fontSize: 14.5,
-              height: 1.45,
-              letterSpacing: 0,
-            ),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isSearching)
+                _StatusFlowMark(progress: controller.value)
+              else if (dots)
+                _StatusDots(progress: controller.value),
+              if (isSearching || dots) const SizedBox(width: 8),
+              Text(
+                dots ? '处理中' : widget.text,
+                style: TextStyle(
+                  color: _mutedColor(context).withValues(alpha: pulse),
+                  fontSize: 14,
+                  height: 1.45,
+                  letterSpacing: 0,
+                ),
+              ),
+            ],
           ),
         );
       },
+    );
+  }
+}
+
+class _StatusFlowMark extends StatelessWidget {
+  const _StatusFlowMark({required this.progress});
+
+  final double progress;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 34,
+      height: 2,
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: _mutedColor(context).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+          ),
+          Align(
+            alignment: Alignment(-1 + progress * 2, 0),
+            child: Container(
+              width: 14,
+              height: 2,
+              decoration: BoxDecoration(
+                color: _mutedColor(context).withValues(alpha: 0.55),
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusDots extends StatelessWidget {
+  const _StatusDots({required this.progress});
+
+  final double progress;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(3, (index) {
+        final phase = (progress + index / 3) % 1.0;
+        final opacity = phase < 0.5 ? 0.25 + phase : 0.75 - (phase - 0.5);
+        return Container(
+          width: 4,
+          height: 4,
+          margin: EdgeInsets.only(right: index == 2 ? 0 : 3),
+          decoration: BoxDecoration(
+            color: _mutedColor(context).withValues(alpha: opacity),
+            shape: BoxShape.circle,
+          ),
+        );
+      }),
     );
   }
 }
@@ -1044,6 +1154,11 @@ class _ChaitDrawerState extends State<ChaitDrawer> {
           value: 'pin',
         ),
         const _MenuAction(
+          icon: Icons.drive_file_rename_outline_rounded,
+          label: '自定义标题',
+          value: 'rename',
+        ),
+        const _MenuAction(
           icon: Icons.delete_outline_rounded,
           label: '删除',
           value: 'delete',
@@ -1062,6 +1177,12 @@ class _ChaitDrawerState extends State<ChaitDrawer> {
     );
     if (action == 'pin') {
       widget.store.togglePin(session);
+    } else if (action == 'rename') {
+      await _showRenameSessionDialog(
+        context: context,
+        store: widget.store,
+        session: session,
+      );
     } else if (action == 'delete') {
       widget.store.deleteSession(session.id);
     } else if (action == 'clear_before') {
@@ -1426,7 +1547,7 @@ String _initialOf(String value) {
   if (trimmed.isEmpty) {
     return '?';
   }
-  return trimmed.substring(0, 1);
+  return String.fromCharCodes(trimmed.runes.take(1));
 }
 
 Future<void> showModelChoiceSheet({

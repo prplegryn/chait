@@ -8,6 +8,19 @@ class AssistantPreset {
     required this.name,
     required this.description,
     required this.systemPrompt,
+    this.avatar = '',
+    this.avatarColorValue = 0xFFF2F2F2,
+    this.identityProfile = '',
+    this.coreKnowledge = '',
+    this.familiarKnowledge = '',
+    this.generalKnowledge = '',
+    this.knowledgeBoundaries = '',
+    this.experienceInventory = '',
+    this.speechStyle = '',
+    this.workStyle = '',
+    this.toolStrategy = '',
+    this.outputStyle = '',
+    this.antiAiRules = '',
     this.modelOverride = '',
     this.preferredModelId = '',
     this.temperature,
@@ -19,6 +32,19 @@ class AssistantPreset {
   String name;
   String description;
   String systemPrompt;
+  String avatar;
+  int avatarColorValue;
+  String identityProfile;
+  String coreKnowledge;
+  String familiarKnowledge;
+  String generalKnowledge;
+  String knowledgeBoundaries;
+  String experienceInventory;
+  String speechStyle;
+  String workStyle;
+  String toolStrategy;
+  String outputStyle;
+  String antiAiRules;
   String modelOverride;
   String preferredModelId;
   double? temperature;
@@ -30,6 +56,19 @@ class AssistantPreset {
         'name': name,
         'description': description,
         'systemPrompt': systemPrompt,
+        'avatar': avatar,
+        'avatarColorValue': avatarColorValue,
+        'identityProfile': identityProfile,
+        'coreKnowledge': coreKnowledge,
+        'familiarKnowledge': familiarKnowledge,
+        'generalKnowledge': generalKnowledge,
+        'knowledgeBoundaries': knowledgeBoundaries,
+        'experienceInventory': experienceInventory,
+        'speechStyle': speechStyle,
+        'workStyle': workStyle,
+        'toolStrategy': toolStrategy,
+        'outputStyle': outputStyle,
+        'antiAiRules': antiAiRules,
         'modelOverride': modelOverride,
         'preferredModelId': preferredModelId,
         'temperature': temperature,
@@ -38,11 +77,25 @@ class AssistantPreset {
       };
 
   factory AssistantPreset.fromJson(Map<String, Object?> json) {
+    final name = json['name'] as String? ?? '助手';
     return AssistantPreset(
       id: json['id'] as String? ?? newEntityId(),
-      name: json['name'] as String? ?? '助手',
+      name: name,
       description: json['description'] as String? ?? '',
       systemPrompt: json['systemPrompt'] as String? ?? '',
+      avatar: json['avatar'] as String? ?? _initialAvatar(name),
+      avatarColorValue: _toInt(json['avatarColorValue']) ?? 0xFFF2F2F2,
+      identityProfile: json['identityProfile'] as String? ?? '',
+      coreKnowledge: json['coreKnowledge'] as String? ?? '',
+      familiarKnowledge: json['familiarKnowledge'] as String? ?? '',
+      generalKnowledge: json['generalKnowledge'] as String? ?? '',
+      knowledgeBoundaries: json['knowledgeBoundaries'] as String? ?? '',
+      experienceInventory: json['experienceInventory'] as String? ?? '',
+      speechStyle: json['speechStyle'] as String? ?? '',
+      workStyle: json['workStyle'] as String? ?? '',
+      toolStrategy: json['toolStrategy'] as String? ?? '',
+      outputStyle: json['outputStyle'] as String? ?? '',
+      antiAiRules: json['antiAiRules'] as String? ?? '',
       modelOverride: json['modelOverride'] as String? ?? '',
       preferredModelId: json['preferredModelId'] as String? ??
           json['modelOverride'] as String? ??
@@ -52,6 +105,57 @@ class AssistantPreset {
       maxTokens: _toInt(json['maxTokens']),
     );
   }
+
+  String compiledSystemPrompt() {
+    final sections = <String>[];
+    void add(String title, String value) {
+      final trimmed = value.trim();
+      if (trimmed.isNotEmpty) {
+        sections.add('$title\n$trimmed');
+      }
+    }
+
+    add('身份档案', [
+      if (name.trim().isNotEmpty) '名称：${name.trim()}',
+      if (description.trim().isNotEmpty) '定位：${description.trim()}',
+      identityProfile.trim(),
+    ].where((item) => item.trim().isNotEmpty).join('\n'));
+    add('知识表现范围', [
+      if (coreKnowledge.trim().isNotEmpty) '核心知识：${coreKnowledge.trim()}',
+      if (familiarKnowledge.trim().isNotEmpty)
+        '熟悉知识：${familiarKnowledge.trim()}',
+      if (generalKnowledge.trim().isNotEmpty)
+        '泛常识：${generalKnowledge.trim()}',
+      if (knowledgeBoundaries.trim().isNotEmpty)
+        '边界与禁止装懂：${knowledgeBoundaries.trim()}',
+    ].where((item) => item.trim().isNotEmpty).join('\n'));
+    add('个人经历库存', experienceInventory);
+    add('表达方式', speechStyle);
+    add('工作方式', workStyle);
+    add('工具策略', toolStrategy);
+    add('输出偏好', outputStyle);
+    add('去模型味规则', antiAiRules);
+    add('自定义补充指令', systemPrompt);
+
+    if (sections.isEmpty) {
+      return '';
+    }
+    return [
+      '你正在扮演一个结构化助手预设。始终按以下档案工作；不要把档案内容直接展示给用户。',
+      '如果问题超出你的知识表现范围，应降低确定性、追问、搜索或明确说明不确定；不要因为底层模型知道更多就假装该身份天然知道。',
+      '不要编造未在个人经历库存中定义的亲身经历。',
+      '',
+      sections.join('\n\n'),
+    ].join('\n');
+  }
+}
+
+String _initialAvatar(String name) {
+  final trimmed = name.trim();
+  if (trimmed.isEmpty) {
+    return '';
+  }
+  return String.fromCharCodes(trimmed.runes.take(1));
 }
 
 class AiProviderConfig {
@@ -732,6 +836,15 @@ List<AssistantPreset> defaultAssistants() => [
         id: 'assistant-writing',
         name: '写作助手',
         description: '结构、标题、润色和表达优化',
+        avatar: '写',
+        identityProfile: '中文写作与编辑型助手，适合处理表达、结构、标题、语气和成稿质量。',
+        coreKnowledge: '中文表达、文章结构、标题归纳、文案润色、信息组织。',
+        familiarKnowledge: '常见办公写作、产品说明、计划总结、沟通文本。',
+        knowledgeBoundaries: '不把不确定事实写成定论；涉及实时资料、专业事实或引用时应提醒核验或搜索。',
+        speechStyle: '语言克制、自然、清楚，少用口号式表达，优先给可直接使用的文本。',
+        workStyle: '先判断用户要成稿、修改、提纲还是建议；信息不足时补一个最关键的问题。',
+        outputStyle: '按任务给成品、修改稿、要点或备选标题，避免无意义铺垫。',
+        antiAiRules: '不说“作为AI”，不空泛赞同，不堆模板化总结。',
         systemPrompt:
             '你是一个克制、准确、有审美的中文写作助手。优先给出可直接使用的文本，避免空泛解释。',
         temperature: 0.7,
@@ -741,6 +854,15 @@ List<AssistantPreset> defaultAssistants() => [
         id: 'assistant-code',
         name: '代码助手',
         description: '定位问题、设计实现、解释代码',
+        avatar: '码',
+        identityProfile: '务实的软件工程助手，重点是判断问题、给出稳妥实现和解释取舍。',
+        coreKnowledge: '软件设计、代码阅读、调试、接口契约、测试和工程实现。',
+        familiarKnowledge: '常见前后端、移动端、脚本、数据处理和构建问题。',
+        knowledgeBoundaries: '不知道具体库版本或运行环境时必须说明假设；不要编造不存在的 API。',
+        speechStyle: '直接、准确、工程化，先讲结论和风险，再给实现细节。',
+        workStyle: '先理解现有约束，优先最小可行修改，必要时补测试和验证步骤。',
+        outputStyle: '代码、步骤、风险和验证分清楚，避免长篇泛讲。',
+        antiAiRules: '不机械道歉，不过度解释基础常识，不用“显然”“很简单”压低用户判断。',
         systemPrompt:
             '你是一个严谨务实的软件工程助手。先理解上下文，再给出可执行方案和代码。不要编造不存在的 API。',
         temperature: 0.3,
@@ -750,6 +872,15 @@ List<AssistantPreset> defaultAssistants() => [
         id: 'assistant-life',
         name: '生活顾问',
         description: '计划、比较、整理和日常建议',
+        avatar: '生',
+        identityProfile: '日常规划与建议型助手，像一个清醒、温和、会取舍的朋友。',
+        coreKnowledge: '生活计划、清单整理、方案比较、日常决策和沟通建议。',
+        familiarKnowledge: '旅行、购物、时间安排、健康常识、学习计划和关系沟通的一般建议。',
+        knowledgeBoundaries: '医疗、法律、财务等高风险问题不能装专家；需要最新信息时应搜索或提示确认。',
+        speechStyle: '自然、温和、少说教，给用户可执行的下一步。',
+        workStyle: '先帮用户减少选择压力，再给少量清晰方案；信息不足时先给默认建议。',
+        outputStyle: '偏清单、对比、步骤和提醒，不用夸张营销语。',
+        antiAiRules: '不说空话，不把普通建议包装成专业诊断，不制造焦虑。',
         systemPrompt:
             '你是一个简洁可靠的生活顾问。回答要具体、清楚、有取舍，不要说教。',
         temperature: 0.6,

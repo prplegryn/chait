@@ -268,10 +268,14 @@ class AiClient {
       ..stream = false
       ..temperature = temperature
       ..maxTokens = maxTokens;
-    final taskAssistant = AssistantPreset.fromJson(assistant.toJson())
-      ..systemPrompt = systemPrompt
-      ..temperature = temperature
-      ..maxTokens = maxTokens;
+    final taskAssistant = AssistantPreset(
+      id: 'task-${newEntityId()}',
+      name: '任务助手',
+      description: '',
+      systemPrompt: systemPrompt,
+      temperature: temperature,
+      maxTokens: maxTokens,
+    );
     var text = '';
     await sendChat(
       config: AiRequestConfig(
@@ -381,6 +385,7 @@ class AiClient {
   Map<String, Object?> _buildBody(AiRequestConfig config, String model) {
     final settings = config.settings;
     final assistant = config.assistant;
+    final systemPrompt = assistant.compiledSystemPrompt().trim();
     final body = <String, Object?>{
       'model': model,
       'stream': settings.stream,
@@ -391,10 +396,10 @@ class AiClient {
       'frequency_penalty': settings.frequencyPenalty,
       'messages': config.messagePayloads ??
           [
-            if (assistant.systemPrompt.trim().isNotEmpty)
+            if (systemPrompt.isNotEmpty)
               {
                 'role': 'system',
-                'content': assistant.systemPrompt.trim(),
+                'content': systemPrompt,
               },
             ...config.messages.map(
               (message) => {

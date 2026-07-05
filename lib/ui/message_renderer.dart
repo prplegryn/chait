@@ -7,8 +7,6 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:markdown/markdown.dart' as md;
 
-import '../models.dart';
-
 class MessageRenderer extends StatelessWidget {
   const MessageRenderer({
     super.key,
@@ -17,6 +15,7 @@ class MessageRenderer extends StatelessWidget {
     required this.mutedColor,
     required this.codeBackground,
     required this.isUser,
+    this.animate = false,
   });
 
   final String content;
@@ -24,6 +23,7 @@ class MessageRenderer extends StatelessWidget {
   final Color mutedColor;
   final Color codeBackground;
   final bool isUser;
+  final bool animate;
 
   @override
   Widget build(BuildContext context) {
@@ -35,7 +35,10 @@ class MessageRenderer extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         for (var index = 0; index < blocks.length; index += 1)
-          Padding(
+          _RevealBlock(
+            enabled: animate,
+            token: '${index}_${blocks[index].kind}_${blocks[index].text.length}',
+            child: Padding(
             padding: EdgeInsets.only(top: index == 0 ? 0 : _gapBefore(blocks[index])),
             child: _BlockView(
               block: blocks[index],
@@ -43,6 +46,7 @@ class MessageRenderer extends StatelessWidget {
               mutedColor: mutedColor,
               codeBackground: codeBackground,
               isUser: isUser,
+            ),
             ),
           ),
       ],
@@ -56,6 +60,41 @@ class MessageRenderer extends StatelessWidget {
       _MessageBlockKind.code => 12,
       _MessageBlockKind.table => 12,
     };
+  }
+}
+
+class _RevealBlock extends StatelessWidget {
+  const _RevealBlock({
+    required this.enabled,
+    required this.token,
+    required this.child,
+  });
+
+  final bool enabled;
+  final String token;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!enabled) {
+      return child;
+    }
+    return TweenAnimationBuilder<double>(
+      key: ValueKey(token),
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+      builder: (context, value, child) {
+        return Opacity(
+          opacity: value,
+          child: Transform.translate(
+            offset: Offset(0, (1 - value) * 3),
+            child: child,
+          ),
+        );
+      },
+      child: child,
+    );
   }
 }
 
@@ -128,13 +167,13 @@ class _MarkdownText extends StatelessWidget {
   Widget build(BuildContext context) {
     final bodyStyle = TextStyle(
       color: isUser ? textColor : textColor.withValues(alpha: 0.94),
-      fontSize: isUser ? 15.5 : 16.2,
-      height: isUser ? 1.46 : 1.66,
+      fontSize: 16.2,
+      height: isUser ? 1.56 : 1.66,
       letterSpacing: 0,
       fontWeight: FontWeight.w400,
     );
     final headingStyle = bodyStyle.copyWith(
-      fontSize: isUser ? 16 : 16.8,
+      fontSize: isUser ? 16.4 : 16.8,
       height: 1.42,
       fontWeight: FontWeight.w600,
     );
@@ -166,8 +205,8 @@ class _MarkdownText extends StatelessWidget {
         ),
         strong: bodyStyle.copyWith(fontWeight: FontWeight.w600),
         em: bodyStyle.copyWith(fontStyle: FontStyle.italic),
-        h1: headingStyle.copyWith(fontSize: isUser ? 17 : 18.2),
-        h2: headingStyle.copyWith(fontSize: isUser ? 16.5 : 17.4),
+        h1: headingStyle.copyWith(fontSize: isUser ? 17.6 : 18.2),
+        h2: headingStyle.copyWith(fontSize: isUser ? 17 : 17.4),
         h3: headingStyle,
         h1Padding: const EdgeInsets.only(top: 12, bottom: 8),
         h2Padding: const EdgeInsets.only(top: 11, bottom: 7),
@@ -178,7 +217,7 @@ class _MarkdownText extends StatelessWidget {
         listBulletPadding: const EdgeInsets.only(right: 6),
         code: TextStyle(
           color: textColor,
-          fontSize: isUser ? 13.2 : 13.4,
+          fontSize: 13.4,
           height: 1.4,
           fontFamily: 'monospace',
           backgroundColor: inlineCodeBackground,

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -25,6 +26,14 @@ Color _shadowColor(BuildContext context, [double alpha = 0.08]) =>
         ? Colors.black.withValues(alpha: alpha + 0.12)
         : Colors.black.withValues(alpha: alpha);
 
+String _avatarPreviewText(String value, {int max = 1}) {
+  final trimmed = value.trim();
+  if (trimmed.isEmpty) {
+    return '助';
+  }
+  return String.fromCharCodes(trimmed.runes.take(max));
+}
+
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key, required this.store});
 
@@ -35,9 +44,9 @@ class SettingsScreen extends StatelessWidget {
     return AnimatedBuilder(
       animation: store,
       builder: (context, _) {
-        return Scaffold(
-          appBar: AppBar(title: const Text('设置')),
-          body: ListView(
+        return _FadedSettingsScaffold(
+          title: '设置',
+          child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
             children: [
               _SettingsGroup(
@@ -157,18 +166,16 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
           return provider.name.toLowerCase().contains(normalized) ||
               provider.baseUrl.toLowerCase().contains(normalized);
         }).toList();
-        return Scaffold(
-          appBar: AppBar(
-            title: const Text('服务商设定'),
-            actions: [
+        return _FadedSettingsScaffold(
+          title: '服务商设定',
+          actions: [
               IconButton(
                 tooltip: '添加服务商',
                 icon: const Icon(Icons.add_rounded),
                 onPressed: _showAddProvider,
               ),
             ],
-          ),
-          body: ListView(
+          child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
             children: [
               _FloatingSearchField(
@@ -702,18 +709,16 @@ class _SearchSettingsPageState extends State<SearchSettingsPage> {
       animation: widget.store,
       builder: (context, _) {
         final providers = widget.store.settings.searchProviders;
-        return Scaffold(
-          appBar: AppBar(
-            title: const Text('搜索服务'),
-            actions: [
+        return _FadedSettingsScaffold(
+          title: '搜索服务',
+          actions: [
               IconButton(
                 tooltip: '添加搜索服务',
                 icon: const Icon(Icons.add_rounded),
                 onPressed: _showAddSearchProvider,
               ),
             ],
-          ),
-          body: ListView(
+          child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
             children: [
               SwitchListTile(
@@ -1087,10 +1092,9 @@ class McpSettingsPage extends StatelessWidget {
     return AnimatedBuilder(
       animation: store,
       builder: (context, _) {
-        return Scaffold(
-          appBar: AppBar(
-            title: const Text('MCP 服务'),
-            actions: [
+        return _FadedSettingsScaffold(
+          title: 'MCP 服务',
+          actions: [
               IconButton(
                 tooltip: '添加 MCP 服务',
                 icon: const Icon(Icons.add_rounded),
@@ -1115,8 +1119,7 @@ class McpSettingsPage extends StatelessWidget {
                 },
               ),
             ],
-          ),
-          body: ListView(
+          child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
             children: [
               if (store.settings.mcpServers.isEmpty)
@@ -1356,10 +1359,9 @@ class AssistantListPage extends StatelessWidget {
     return AnimatedBuilder(
       animation: store,
       builder: (context, _) {
-        return Scaffold(
-          appBar: AppBar(
-            title: const Text('助手预设'),
-            actions: [
+        return _FadedSettingsScaffold(
+          title: '助手预设',
+          actions: [
               IconButton(
                 tooltip: '新建助手',
                 icon: const Icon(Icons.add_rounded),
@@ -1372,14 +1374,14 @@ class AssistantListPage extends StatelessWidget {
                         name: '',
                         description: '',
                         systemPrompt: '',
+                        avatar: '助',
                       ),
                     ),
                   ),
                 ),
               ),
             ],
-          ),
-          body: ListView.separated(
+          child: ListView.separated(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
             itemCount: store.assistants.length,
             separatorBuilder: (_, __) => const Divider(height: 1),
@@ -1387,6 +1389,17 @@ class AssistantListPage extends StatelessWidget {
               final assistant = store.assistants[index];
               return ListTile(
                 contentPadding: EdgeInsets.zero,
+                leading: CircleAvatar(
+                  backgroundColor: _softColor(context),
+                  foregroundColor: _textColor(context),
+                  child: Text(
+                    _avatarPreviewText(
+                      assistant.avatar.trim().isNotEmpty
+                          ? assistant.avatar
+                          : assistant.name,
+                    ),
+                  ),
+                ),
                 title: Text(assistant.name),
                 subtitle: Text(assistant.description),
                 trailing: PopupMenuButton<String>(
@@ -1446,6 +1459,18 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
   late final TextEditingController name;
   late final TextEditingController description;
   late final TextEditingController prompt;
+  late final TextEditingController avatar;
+  late final TextEditingController identityProfile;
+  late final TextEditingController coreKnowledge;
+  late final TextEditingController familiarKnowledge;
+  late final TextEditingController generalKnowledge;
+  late final TextEditingController knowledgeBoundaries;
+  late final TextEditingController experienceInventory;
+  late final TextEditingController speechStyle;
+  late final TextEditingController workStyle;
+  late final TextEditingController toolStrategy;
+  late final TextEditingController outputStyle;
+  late final TextEditingController antiAiRules;
   late final TextEditingController temperature;
   late final TextEditingController topP;
   late final TextEditingController maxTokens;
@@ -1459,7 +1484,39 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
     name = TextEditingController(text: preset.name);
     description = TextEditingController(text: preset.description);
     prompt = TextEditingController(text: preset.systemPrompt);
-    prompt.addListener(_onPromptChanged);
+    avatar = TextEditingController(text: preset.avatar);
+    identityProfile = TextEditingController(text: preset.identityProfile);
+    coreKnowledge = TextEditingController(text: preset.coreKnowledge);
+    familiarKnowledge = TextEditingController(text: preset.familiarKnowledge);
+    generalKnowledge = TextEditingController(text: preset.generalKnowledge);
+    knowledgeBoundaries =
+        TextEditingController(text: preset.knowledgeBoundaries);
+    experienceInventory =
+        TextEditingController(text: preset.experienceInventory);
+    speechStyle = TextEditingController(text: preset.speechStyle);
+    workStyle = TextEditingController(text: preset.workStyle);
+    toolStrategy = TextEditingController(text: preset.toolStrategy);
+    outputStyle = TextEditingController(text: preset.outputStyle);
+    antiAiRules = TextEditingController(text: preset.antiAiRules);
+    for (final controller in [
+      name,
+      description,
+      prompt,
+      avatar,
+      identityProfile,
+      coreKnowledge,
+      familiarKnowledge,
+      generalKnowledge,
+      knowledgeBoundaries,
+      experienceInventory,
+      speechStyle,
+      workStyle,
+      toolStrategy,
+      outputStyle,
+      antiAiRules,
+    ]) {
+      controller.addListener(_onPromptChanged);
+    }
     preferredModelId = preset.preferredModelId;
     temperature = TextEditingController(text: preset.temperature?.toString());
     topP = TextEditingController(text: preset.topP?.toString());
@@ -1468,10 +1525,26 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
 
   @override
   void dispose() {
-    prompt.removeListener(_onPromptChanged);
-    name.dispose();
-    description.dispose();
-    prompt.dispose();
+    for (final controller in [
+      name,
+      description,
+      prompt,
+      avatar,
+      identityProfile,
+      coreKnowledge,
+      familiarKnowledge,
+      generalKnowledge,
+      knowledgeBoundaries,
+      experienceInventory,
+      speechStyle,
+      workStyle,
+      toolStrategy,
+      outputStyle,
+      antiAiRules,
+    ]) {
+      controller.removeListener(_onPromptChanged);
+      controller.dispose();
+    }
     temperature.dispose();
     topP.dispose();
     maxTokens.dispose();
@@ -1489,6 +1562,18 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
       ..name = name.text.trim()
       ..description = description.text.trim()
       ..systemPrompt = prompt.text.trim()
+      ..avatar = avatar.text.trim()
+      ..identityProfile = identityProfile.text.trim()
+      ..coreKnowledge = coreKnowledge.text.trim()
+      ..familiarKnowledge = familiarKnowledge.text.trim()
+      ..generalKnowledge = generalKnowledge.text.trim()
+      ..knowledgeBoundaries = knowledgeBoundaries.text.trim()
+      ..experienceInventory = experienceInventory.text.trim()
+      ..speechStyle = speechStyle.text.trim()
+      ..workStyle = workStyle.text.trim()
+      ..toolStrategy = toolStrategy.text.trim()
+      ..outputStyle = outputStyle.text.trim()
+      ..antiAiRules = antiAiRules.text.trim()
       ..modelOverride = ''
       ..preferredModelId = preferredModelId
       ..temperature = _nullableDouble(temperature.text)
@@ -1502,15 +1587,32 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
   }
 
   Future<void> _polish() async {
-    if (prompt.text.trim().isEmpty || polishing) {
+    if (polishing) {
+      return;
+    }
+    final brief = await _askAssistantBrief();
+    if (brief == null || brief.trim().isEmpty) {
       return;
     }
     setState(() => polishing = true);
     try {
       final result = await widget.store.polishAssistantDraft(
+        brief: brief,
         name: name.text,
         description: description.text,
         systemPrompt: prompt.text,
+        avatar: avatar.text,
+        identityProfile: identityProfile.text,
+        coreKnowledge: coreKnowledge.text,
+        familiarKnowledge: familiarKnowledge.text,
+        generalKnowledge: generalKnowledge.text,
+        knowledgeBoundaries: knowledgeBoundaries.text,
+        experienceInventory: experienceInventory.text,
+        speechStyle: speechStyle.text,
+        workStyle: workStyle.text,
+        toolStrategy: toolStrategy.text,
+        outputStyle: outputStyle.text,
+        antiAiRules: antiAiRules.text,
         temperature: temperature.text,
         topP: topP.text,
         maxTokens: maxTokens.text,
@@ -1519,6 +1621,21 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
       name.text = result['name'] ?? name.text;
       description.text = result['description'] ?? description.text;
       prompt.text = result['systemPrompt'] ?? prompt.text;
+      avatar.text = result['avatar'] ?? avatar.text;
+      identityProfile.text = result['identityProfile'] ?? identityProfile.text;
+      coreKnowledge.text = result['coreKnowledge'] ?? coreKnowledge.text;
+      familiarKnowledge.text =
+          result['familiarKnowledge'] ?? familiarKnowledge.text;
+      generalKnowledge.text = result['generalKnowledge'] ?? generalKnowledge.text;
+      knowledgeBoundaries.text =
+          result['knowledgeBoundaries'] ?? knowledgeBoundaries.text;
+      experienceInventory.text =
+          result['experienceInventory'] ?? experienceInventory.text;
+      speechStyle.text = result['speechStyle'] ?? speechStyle.text;
+      workStyle.text = result['workStyle'] ?? workStyle.text;
+      toolStrategy.text = result['toolStrategy'] ?? toolStrategy.text;
+      outputStyle.text = result['outputStyle'] ?? outputStyle.text;
+      antiAiRules.text = result['antiAiRules'] ?? antiAiRules.text;
       temperature.text = result['temperature'] ?? temperature.text;
       topP.text = result['topP'] ?? topP.text;
       maxTokens.text = result['maxTokens'] ?? maxTokens.text;
@@ -1534,21 +1651,176 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
     }
   }
 
+  Future<String?> _askAssistantBrief() async {
+    final controller = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('生成助手档案'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          minLines: 3,
+          maxLines: 5,
+          cursorColor: _textColor(context),
+          decoration: const InputDecoration(
+            hintText: '用一句话描述你想要的助手',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('生成'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return result;
+  }
+
   @override
   Widget build(BuildContext context) {
     return _EditScaffold(
       title: '编辑助手',
       onSave: _save,
+      actions: [
+        IconButton(
+          tooltip: '生成助手档案',
+          onPressed: polishing ? null : _polish,
+          icon: polishing
+              ? SizedBox(
+                  width: 17,
+                  height: 17,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: _textColor(context),
+                  ),
+                )
+              : const Icon(Icons.auto_fix_high_rounded),
+        ),
+      ],
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _Field(label: '名称', hint: '写作助手', controller: name),
-          _Field(label: '说明', hint: '结构、标题、润色', controller: description),
-          _PromptField(
-            label: '系统提示词',
-            hint: '定义这个助手的角色、语气、边界和输出偏好',
-            controller: prompt,
-            polishing: polishing,
-            onPolish: prompt.text.trim().isEmpty ? null : _polish,
+          _AssistantProfileHeader(
+            avatar: avatar,
+            name: name,
+            description: description,
+          ),
+          const SizedBox(height: 16),
+          _AssistantSection(
+            title: '人格档案',
+            subtitle: '身份像人，但不编造现实经历',
+            children: [
+              _Field(
+                label: '身份背景',
+                hint: '描述这个助手的身份、服务对象、气质和边界',
+                controller: identityProfile,
+                minLines: 3,
+                maxLines: 5,
+              ),
+              _Field(
+                label: '个人经历库存',
+                hint: '只写允许使用的背景、偏好和经验；没写的就不能编',
+                controller: experienceInventory,
+                minLines: 3,
+                maxLines: 5,
+              ),
+            ],
+          ),
+          _AssistantSection(
+            title: '知识边界',
+            subtitle: '把模型能力切成可表现、需谨慎、必须查证',
+            children: [
+              _Field(
+                label: '核心知识',
+                hint: '可以自然自信回答的领域',
+                controller: coreKnowledge,
+                minLines: 2,
+                maxLines: 4,
+              ),
+              _Field(
+                label: '熟悉知识',
+                hint: '能处理，但复杂时要降低确定性的领域',
+                controller: familiarKnowledge,
+                minLines: 2,
+                maxLines: 4,
+              ),
+              _Field(
+                label: '泛常识',
+                hint: '可用普通人的常识方式交流的内容',
+                controller: generalKnowledge,
+                minLines: 2,
+                maxLines: 4,
+              ),
+              _Field(
+                label: '边界与禁止装懂',
+                hint: '不懂什么、什么时候要查、什么时候必须承认不确定',
+                controller: knowledgeBoundaries,
+                minLines: 3,
+                maxLines: 5,
+              ),
+            ],
+          ),
+          _AssistantSection(
+            title: '说话和做事',
+            subtitle: '控制真实交流感，而不是堆人设词',
+            children: [
+              _Field(
+                label: '表达方式',
+                hint: '句长、亲近感、正式度、术语密度、情绪反馈',
+                controller: speechStyle,
+                minLines: 3,
+                maxLines: 5,
+              ),
+              _Field(
+                label: '工作方式',
+                hint: '是否先追问、是否主动建议、如何处理不确定性',
+                controller: workStyle,
+                minLines: 3,
+                maxLines: 5,
+              ),
+              _Field(
+                label: '输出偏好',
+                hint: 'Markdown、代码、公式、表格、引用、长短文结构',
+                controller: outputStyle,
+                minLines: 2,
+                maxLines: 4,
+              ),
+            ],
+          ),
+          _AssistantSection(
+            title: '能力和约束',
+            subtitle: '工具不是默认乱用，只在真实需要时补足能力',
+            children: [
+              _Field(
+                label: '工具策略',
+                hint: '何时搜索、何时读时间、何时用 MCP 或附件',
+                controller: toolStrategy,
+                minLines: 3,
+                maxLines: 5,
+              ),
+              _Field(
+                label: '去模型味规则',
+                hint: '避免模板话、空泛赞同、过度免责声明和“作为 AI”',
+                controller: antiAiRules,
+                minLines: 3,
+                maxLines: 5,
+              ),
+              _Field(
+                label: '硬性补充指令',
+                hint: '只有确实需要时填写，会附加到最终系统提示',
+                controller: prompt,
+                minLines: 4,
+                maxLines: 8,
+              ),
+            ],
           ),
           _ModelPickerTile(
             label: '助手偏好模型',
@@ -1561,7 +1833,7 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
             children: [
               Expanded(
                 child: _Field(
-                  label: 'temperature',
+                  label: 'Temperature',
                   hint: '继承',
                   controller: temperature,
                   keyboardType: TextInputType.number,
@@ -1570,7 +1842,7 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
               const SizedBox(width: 12),
               Expanded(
                 child: _Field(
-                  label: 'top_p',
+                  label: 'Top P',
                   hint: '继承',
                   controller: topP,
                   keyboardType: TextInputType.number,
@@ -1579,12 +1851,134 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
             ],
           ),
           _Field(
-            label: 'max tokens',
+            label: 'Max tokens',
             hint: '继承',
             controller: maxTokens,
             keyboardType: TextInputType.number,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _AssistantProfileHeader extends StatelessWidget {
+  const _AssistantProfileHeader({
+    required this.avatar,
+    required this.name,
+    required this.description,
+  });
+
+  final TextEditingController avatar;
+  final TextEditingController name;
+  final TextEditingController description;
+
+  @override
+  Widget build(BuildContext context) {
+    final symbol = avatar.text.trim().isEmpty ? '助' : avatar.text.trim();
+    return _SettingsCard(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 58,
+                  height: 58,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _softColor(context),
+                    border: Border.all(color: _lineColor(context)),
+                  ),
+                  child: Text(
+                    _avatarPreviewText(symbol, max: 2),
+                    style: TextStyle(
+                      color: _textColor(context),
+                      fontSize: 22,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    children: [
+                      _Field(
+                        label: '头像文字',
+                        hint: '助',
+                        controller: avatar,
+                      ),
+                      _Field(
+                        label: '名称',
+                        hint: '写作助手',
+                        controller: name,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            _Field(
+              label: '一句话定位',
+              hint: '这个助手适合做什么',
+              controller: description,
+              minLines: 2,
+              maxLines: 3,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AssistantSection extends StatelessWidget {
+  const _AssistantSection({
+    required this.title,
+    required this.subtitle,
+    required this.children,
+  });
+
+  final String title;
+  final String subtitle;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: _SettingsCard(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 13, 14, 2),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  color: _textColor(context),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  height: 1.25,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  color: _mutedColor(context),
+                  fontSize: 12,
+                  height: 1.3,
+                ),
+              ),
+              const SizedBox(height: 14),
+              ...children,
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1819,79 +2213,161 @@ class _AppearancePageState extends State<AppearancePage> {
       title: '外观',
       onSave: _save,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SettingLabel('模式'),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _AppearancePill(
-                label: '浅色',
-                selected: appearanceMode == 'light',
-                onTap: () => setState(() => appearanceMode = 'light'),
-              ),
-              _AppearancePill(
-                label: '深色',
-                selected: appearanceMode == 'dark',
-                onTap: () => setState(() => appearanceMode = 'dark'),
-              ),
-              _AppearancePill(
-                label: 'OLED',
-                selected: appearanceMode == 'oled',
-                onTap: () => setState(() => appearanceMode = 'oled'),
-              ),
-            ],
+          _AppearancePanel(
+            title: '模式',
+            child: Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _AppearancePill(
+                  label: '浅色',
+                  selected: appearanceMode == 'light',
+                  onTap: () => setState(() => appearanceMode = 'light'),
+                ),
+                _AppearancePill(
+                  label: '深色',
+                  selected: appearanceMode == 'dark',
+                  onTap: () => setState(() => appearanceMode = 'dark'),
+                ),
+                _AppearancePill(
+                  label: 'OLED',
+                  selected: appearanceMode == 'oled',
+                  onTap: () => setState(() => appearanceMode = 'oled'),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 20),
-          _SettingLabel('气泡颜色'),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: _themeColorPresets
-                .map(
-                  (preset) => _ThemeColorChoice(
-                    label: preset.label,
-                    color: Color(preset.value),
-                    selected: themeColorValue == preset.value,
-                    onTap: () => setState(() => themeColorValue = preset.value),
+          _AppearancePanel(
+            title: '主题色',
+            subtitle: '用于你的消息气泡',
+            child: Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 10,
+              runSpacing: 10,
+              children: _themeColorPresets
+                  .map(
+                    (preset) => _ThemeColorChoice(
+                      label: preset.label,
+                      color: Color(preset.value),
+                      selected: themeColorValue == preset.value,
+                      onTap: () =>
+                          setState(() => themeColorValue = preset.value),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+          _AppearancePanel(
+            title: '字体',
+            subtitle: '影响聊天正文和设置页阅读尺寸',
+            child: Column(
+              children: [
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 13),
+                  decoration: BoxDecoration(
+                    color: _softColor(context),
+                    borderRadius: BorderRadius.circular(14),
                   ),
-                )
-                .toList(),
-          ),
-          const SizedBox(height: 20),
-          _SettingLabel('字体大小'),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: const [
-              _FontScalePreset('极小', 0.76),
-              _FontScalePreset('很小', 0.84),
-              _FontScalePreset('小', 0.92),
-              _FontScalePreset('标准', 1),
-              _FontScalePreset('舒适', 1.06),
-              _FontScalePreset('大', 1.12),
-              _FontScalePreset('特大', 1.18),
-              _FontScalePreset('超大', 1.28),
-            ]
-                .map(
-                  (preset) => _AppearancePill(
-                    label: preset.label,
-                    selected: (fontScale - preset.value).abs() < 0.01,
-                    onTap: () => setState(() => fontScale = preset.value),
+                  child: Text(
+                    '这是一段聊天正文预览，字号会随设置变化。',
+                    style: TextStyle(
+                      color: _textColor(context),
+                      fontSize: 15.5 * fontScale,
+                      height: 1.55,
+                    ),
                   ),
-                )
-                .toList(),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: const [
+                    _FontScalePreset('极小', 0.74),
+                    _FontScalePreset('很小', 0.80),
+                    _FontScalePreset('小', 0.88),
+                    _FontScalePreset('标准', 1),
+                    _FontScalePreset('舒适', 1.06),
+                    _FontScalePreset('大', 1.12),
+                    _FontScalePreset('特大', 1.20),
+                    _FontScalePreset('超大', 1.28),
+                  ]
+                      .map(
+                        (preset) => _AppearancePill(
+                          label: preset.label,
+                          selected: (fontScale - preset.value).abs() < 0.01,
+                          onTap: () => setState(() => fontScale = preset.value),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 18),
-          SwitchListTile(
-            value: haptics,
-            activeThumbColor: _textColor(context),
-            contentPadding: EdgeInsets.zero,
-            title: const Text('触感反馈'),
-            onChanged: (value) => setState(() => haptics = value),
+          _AppearancePanel(
+            title: '交互',
+            child: SwitchListTile(
+              value: haptics,
+              activeThumbColor: _textColor(context),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('触感反馈'),
+              onChanged: (value) => setState(() => haptics = value),
+            ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _AppearancePanel extends StatelessWidget {
+  const _AppearancePanel({
+    required this.title,
+    required this.child,
+    this.subtitle = '',
+  });
+
+  final String title;
+  final String subtitle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: _SettingsCard(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 13, 14, 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  color: _textColor(context),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (subtitle.isNotEmpty) ...[
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: _mutedColor(context),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 13),
+              child,
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -2070,9 +2546,9 @@ class _DataPageState extends State<DataPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('数据与备份')),
-      body: ListView(
+    return _FadedSettingsScaffold(
+      title: '数据与备份',
+      child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
         children: [
           SwitchListTile(
@@ -2241,27 +2717,216 @@ class _EditScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final top = MediaQuery.paddingOf(context).top;
+    final bg = _background(context);
     return Scaffold(
-      appBar: AppBar(
-        title: Text(title),
-        actions: [
-          ...actions,
-          TextButton(
-            onPressed: onSave,
-            child: Text(
-              '保存',
-              style: TextStyle(
-                color: _textColor(context),
-                fontWeight: FontWeight.w600,
+      body: Stack(
+        children: [
+          ListView(
+            padding: EdgeInsets.fromLTRB(16, top + 72, 16, 28),
+            children: [child],
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            top: 0,
+            child: SizedBox(
+              height: top + 88,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: ClipRect(
+                      child: ShaderMask(
+                        blendMode: BlendMode.dstIn,
+                        shaderCallback: (bounds) => const LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.black,
+                            Colors.black,
+                            Color(0xAA000000),
+                            Color(0x00000000),
+                          ],
+                          stops: [0, 0.58, 0.80, 1],
+                        ).createShader(bounds),
+                        child: BackdropFilter(
+                          filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                          child: const ColoredBox(color: Colors.transparent),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            bg,
+                            bg.withValues(alpha: 0.98),
+                            bg.withValues(alpha: 0.78),
+                            bg.withValues(alpha: 0),
+                          ],
+                          stops: const [0, 0.58, 0.82, 1],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: EdgeInsets.only(top: top + 4),
+                    child: SizedBox(
+                      height: 52,
+                      child: Row(
+                        children: [
+                          const SizedBox(width: 4),
+                          IconButton(
+                            tooltip: '返回',
+                            icon: const Icon(Icons.arrow_back_rounded),
+                            onPressed: () => Navigator.maybePop(context),
+                          ),
+                          Expanded(
+                            child: Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: _textColor(context),
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          ...actions,
+                          TextButton(
+                            onPressed: onSave,
+                            child: Text(
+                              '保存',
+                              style: TextStyle(
+                                color: _textColor(context),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
-          const SizedBox(width: 6),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
-        children: [child],
+    );
+  }
+}
+
+class _FadedSettingsScaffold extends StatelessWidget {
+  const _FadedSettingsScaffold({
+    required this.title,
+    required this.child,
+    this.actions = const [],
+  });
+
+  final String title;
+  final Widget child;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final top = MediaQuery.paddingOf(context).top;
+    final bg = _background(context);
+    return Scaffold(
+      body: Stack(
+        children: [
+          Padding(
+            padding: EdgeInsets.only(top: top + 66),
+            child: child,
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            top: 0,
+            child: SizedBox(
+              height: top + 82,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: ClipRect(
+                      child: ShaderMask(
+                        blendMode: BlendMode.dstIn,
+                        shaderCallback: (bounds) => const LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.black,
+                            Colors.black,
+                            Color(0xA0000000),
+                            Color(0x00000000),
+                          ],
+                          stops: [0, 0.60, 0.82, 1],
+                        ).createShader(bounds),
+                        child: BackdropFilter(
+                          filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                          child: const ColoredBox(color: Colors.transparent),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            bg,
+                            bg.withValues(alpha: 0.98),
+                            bg.withValues(alpha: 0.72),
+                            bg.withValues(alpha: 0),
+                          ],
+                          stops: const [0, 0.62, 0.84, 1],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: EdgeInsets.only(top: top + 4),
+                    child: SizedBox(
+                      height: 52,
+                      child: Row(
+                        children: [
+                          const SizedBox(width: 4),
+                          IconButton(
+                            tooltip: '返回',
+                            icon: const Icon(Icons.arrow_back_rounded),
+                            onPressed: () => Navigator.maybePop(context),
+                          ),
+                          Expanded(
+                            child: Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: _textColor(context),
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          ...actions,
+                          const SizedBox(width: 8),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2296,13 +2961,7 @@ class _SettingsCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: _surface(context),
         borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: _shadowColor(context, 0.06),
-            blurRadius: 18,
-            spreadRadius: 1,
-          ),
-        ],
+        border: Border.all(color: _lineColor(context)),
       ),
       child: child,
     );

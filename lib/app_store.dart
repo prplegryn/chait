@@ -501,6 +501,45 @@ class AppStore extends ChangeNotifier {
     await save();
   }
 
+  Future<void> renameSession(String id, String title) async {
+    final trimmed = title.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (trimmed.isEmpty) {
+      return;
+    }
+    final session = sessions.firstWhere(
+      (item) => item.id == id,
+      orElse: () => currentSession,
+    );
+    session.title = _truncateTitle(trimmed);
+    session.updatedAt = DateTime.now();
+    _sortSessions();
+    notifyListeners();
+    await save();
+  }
+
+  Future<void> restoreAutoTitle(String id) async {
+    final session = sessions.firstWhere(
+      (item) => item.id == id,
+      orElse: () => currentSession,
+    );
+    final firstUser = session.messages.where((message) => message.role == 'user');
+    if (firstUser.isEmpty) {
+      session.title = '新对话';
+      notifyListeners();
+      await save();
+      return;
+    }
+    final prompt = firstUser.first.content;
+    session.title = '新对话';
+    notifyListeners();
+    await save();
+    if (settings.titleModelId.isNotEmpty) {
+      await generateTitleForSession(session.id, fallbackPrompt: prompt);
+    } else {
+      await _setFallbackTitle(session, prompt);
+    }
+  }
+
   Future<void> deleteSession(String id) async {
     sessions.removeWhere((session) => session.id == id);
     if (sessions.isEmpty) {
@@ -746,7 +785,15 @@ class AppStore extends ChangeNotifier {
         baseUrl: target.provider.baseUrl,
         model: target.model.name,
         customHeadersJson: target.provider.customHeadersJson,
-        systemPrompt: '你只负责给聊天生成一个简短中文标题。不要解释，不要引号，最多 14 个字。',
+        systemPrompt: '''
+你只负责给聊天生成一个简短中文会话标题。
+要求：
+- 归纳用户意图，不摘抄原句。
+- 使用名词短语或任务短语，2 到 10 个中文字符优先，最多 14 个字。
+- 闲聊、问候、查询、计划、写作、代码、翻译、总结、比较、建议等都应归入清晰意图。
+- 去掉语气词、标点、称呼、冗余对象和口语尾巴。
+- 不要解释，不要引号，不要 Markdown。
+''',
         userPrompt: fallbackPrompt,
         temperature: 0.2,
         maxTokens: 48,
@@ -765,9 +812,22 @@ class AppStore extends ChangeNotifier {
   }
 
   Future<Map<String, String>> polishAssistantDraft({
+    required String brief,
     required String name,
     required String description,
     required String systemPrompt,
+    required String avatar,
+    required String identityProfile,
+    required String coreKnowledge,
+    required String familiarKnowledge,
+    required String generalKnowledge,
+    required String knowledgeBoundaries,
+    required String experienceInventory,
+    required String speechStyle,
+    required String workStyle,
+    required String toolStrategy,
+    required String outputStyle,
+    required String antiAiRules,
     required String temperature,
     required String topP,
     required String maxTokens,
@@ -786,16 +846,29 @@ class AppStore extends ChangeNotifier {
       customHeadersJson: target.provider.customHeadersJson,
       systemPrompt: _polishSystemPrompt,
       userPrompt: jsonEncode({
+        'brief': brief,
         'name': name,
         'description': description,
         'systemPrompt': systemPrompt,
+        'avatar': avatar,
+        'identityProfile': identityProfile,
+        'coreKnowledge': coreKnowledge,
+        'familiarKnowledge': familiarKnowledge,
+        'generalKnowledge': generalKnowledge,
+        'knowledgeBoundaries': knowledgeBoundaries,
+        'experienceInventory': experienceInventory,
+        'speechStyle': speechStyle,
+        'workStyle': workStyle,
+        'toolStrategy': toolStrategy,
+        'outputStyle': outputStyle,
+        'antiAiRules': antiAiRules,
         'preferredModelId': modelId,
         'temperature': temperature,
         'topP': topP,
         'maxTokens': maxTokens,
       }),
       temperature: 0.2,
-      maxTokens: 1000,
+      maxTokens: 1800,
     );
     final decoded = jsonDecode(_extractJsonObject(result));
     if (decoded is! Map) {
@@ -1200,11 +1273,12 @@ class AppStore extends ChangeNotifier {
     required AssistantPreset assistant,
     required ChatSession session,
   }) {
+    final systemPrompt = assistant.compiledSystemPrompt().trim();
     return [
-      if (assistant.systemPrompt.trim().isNotEmpty)
+      if (systemPrompt.isNotEmpty)
         {
           'role': 'system',
-          'content': assistant.systemPrompt.trim(),
+          'content': systemPrompt,
         },
       {
         'role': 'system',
@@ -1522,10 +1596,75 @@ If the results are weak or unavailable, say that clearly instead of guessing.
 
   String _titleFromPrompt(String prompt) {
     final normalized = prompt.replaceAll(RegExp(r'\s+'), ' ').trim();
+    final lower = normalized.toLowerCase();
+    if (normalized.isEmpty) {
+      return '新对话';
+    }
+    if (RegExp(r'^(你?好|您好|你好吗|最近好吗|hi|hello|hey|嗨|哈喽)[\s!！。,.，?？]*$')
+        .hasMatch(lower)) {
+      return '问候';
+    }
+    if (lower.contains('天气') ||
+        lower.contains('气温') ||
+        lower.contains('下雨') ||
+        lower.contains('台风')) {
+      return '询问天气';
+    }
+    if (lower.contains('翻译') || lower.contains('translate')) {
+      return '文本翻译';
+    }
+    if (lower.contains('总结') ||
+        lower.contains('概括') ||
+        lower.contains('摘要') ||
+        lower.contains('summarize')) {
+      return '内容总结';
+    }
+    if (lower.contains('代码') ||
+        lower.contains('报错') ||
+        lower.contains('bug') ||
+        lower.contains('flutter') ||
+        lower.contains('api')) {
+      return '代码问题';
+    }
+    if (lower.contains('写') ||
+        lower.contains('润色') ||
+        lower.contains('文案') ||
+        lower.contains('标题')) {
+      return '写作处理';
+    }
+    if (lower.contains('比较') ||
+        lower.contains('哪个好') ||
+        lower.contains('区别') ||
+        lower.contains('对比')) {
+      return '方案比较';
+    }
+    if (lower.contains('计划') ||
+        lower.contains('安排') ||
+        lower.contains('规划') ||
+        lower.contains('日程')) {
+      return '计划安排';
+    }
+    if (lower.contains('搜索') ||
+        lower.contains('查') ||
+        lower.contains('最新') ||
+        lower.contains('新闻')) {
+      return '信息查询';
+    }
+    if (lower.contains('?') || lower.contains('？') || lower.startsWith('为什么')) {
+      return '问题咨询';
+    }
     if (normalized.length <= 18) {
       return normalized;
     }
-    return '${normalized.substring(0, 18)}...';
+    return _truncateTitle(normalized, max: 18);
+  }
+
+  String _truncateTitle(String value, {int max = 24}) {
+    final runes = value.runes.toList();
+    if (runes.length <= max) {
+      return value;
+    }
+    return '${String.fromCharCodes(runes.take(max))}...';
   }
 
   List<AssistantPreset> _decodeAssistantList(String? source) {
@@ -1613,14 +1752,27 @@ class _SearchOutcome {
 }
 
 const _polishSystemPrompt = '''
-你是 AI 助手预设编辑器。请润色用户提交的助手配置，让它更清晰、稳定、克制、可执行。
+你是 AI 助手档案设计器。请把用户的一句话描述和现有配置，转换为可微调的结构化助手档案。
 必须只返回 JSON 对象，不要 Markdown，不要解释。
 字段：
 - name: 简短中文名称，2 到 8 个字。
 - description: 14 到 28 个字，说明用途，不营销。
-- systemPrompt: 完整系统提示词，清楚描述角色、边界、输出风格、拒绝编造、必要时追问。
+- avatar: 1 到 2 个字符，用作头像文字。
+- identityProfile: 身份、背景、服务对象。要拟人但不能声称真实存在。
+- coreKnowledge: 核心知识表现范围，可自然自信回答的领域。
+- familiarKnowledge: 熟悉但复杂时需降低确定性的领域。
+- generalKnowledge: 可用普通常识方式交流的领域。
+- knowledgeBoundaries: 不懂、需查证、禁止装懂、禁止编造经历的边界。
+- experienceInventory: 允许使用的背景经验、偏好、生活经验；没有定义的经历不能编造。
+- speechStyle: 句长、亲近感、正式度、术语密度、情绪反馈和口语习惯。
+- workStyle: 追问、先给结论、主动建议、处理不确定性的方式。
+- toolStrategy: 搜索、系统时间、MCP、附件等工具的使用条件。
+- outputStyle: Markdown、代码、公式、表格、引用、长短文结构偏好。
+- antiAiRules: 去模型味规则，避免模板话、空泛赞同、过度免责声明和“作为 AI”。
+- systemPrompt: 用户额外补充的最终硬性指令。没有必要时可保留现有值或返回空字符串。
 - temperature: 0 到 2 的数字字符串；偏事实任务降低，创意任务可提高。
 - topP: 0 到 1 的数字字符串。
 - maxTokens: 256 到 8192 的整数字符串。
 不要修改 preferredModelId，原样返回。
+如果 brief 与现有字段冲突，以 brief 为主，但不要生成危险、欺骗或要求模型假装真实经历的设定。
 ''';
