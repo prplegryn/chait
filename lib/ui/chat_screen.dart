@@ -224,7 +224,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           padding: EdgeInsets.only(
                             top: MediaQuery.paddingOf(context).top + 116,
                           ),
-                          child: const _EmptyChat(),
+                          child: _EmptyChat(assistant: assistant),
                         )
                       : ListView.builder(
                           controller: _scrollController,
@@ -588,7 +588,9 @@ class _TitleAvatar extends StatelessWidget {
 }
 
 class _EmptyChat extends StatelessWidget {
-  const _EmptyChat();
+  const _EmptyChat({required this.assistant});
+
+  final AssistantPreset assistant;
 
   @override
   Widget build(BuildContext context) {
@@ -605,7 +607,74 @@ class _EmptyChat extends StatelessWidget {
           stops: const [0, 0.58, 1],
         ),
       ),
-      child: const SizedBox.expand(),
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 40),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _WelcomeAvatar(assistant: assistant),
+              const SizedBox(height: 14),
+              Text(
+                assistant.name,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: _textColor(context),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  height: 1.2,
+                ),
+              ),
+              if (assistant.description.trim().isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  assistant.description.trim(),
+                  textAlign: TextAlign.center,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: _mutedColor(context),
+                    fontSize: 14,
+                    height: 1.45,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WelcomeAvatar extends StatelessWidget {
+  const _WelcomeAvatar({required this.assistant});
+
+  final AssistantPreset assistant;
+
+  @override
+  Widget build(BuildContext context) {
+    final path = assistant.avatarImagePath.trim();
+    final hasImage = path.isNotEmpty && File(path).existsSync();
+    return Container(
+      width: 42,
+      height: 42,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: _softColor(context),
+      ),
+      alignment: Alignment.center,
+      child: hasImage
+          ? Image.file(File(path), fit: BoxFit.cover)
+          : Text(
+              _avatarText(assistant),
+              style: TextStyle(
+                color: _textColor(context),
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
     );
   }
 }
