@@ -549,9 +549,10 @@ class _ImmersiveTopBar extends StatelessWidget {
                 child: Row(
                   children: [
                     const SizedBox(width: 8),
-                    IconButton(
+                    _RoundShadowButton(
                       tooltip: '打开侧边栏',
-                      icon: const Icon(Icons.menu_rounded, size: 24),
+                      icon: Icons.menu_rounded,
+                      compact: true,
                       onPressed: onOpenDrawer,
                     ),
                     Expanded(
@@ -568,9 +569,10 @@ class _ImmersiveTopBar extends StatelessWidget {
                       curve: Curves.easeOutCubic,
                       child: IgnorePointer(
                         ignoring: !showNewChat,
-                        child: IconButton(
+                        child: _RoundShadowButton(
                           tooltip: '新对话',
-                          icon: const Icon(Icons.edit_square, size: 21),
+                          icon: Icons.add_comment_outlined,
+                          compact: true,
                           onPressed: onNewChat,
                         ),
                       ),
@@ -798,10 +800,18 @@ class MessageBubble extends StatelessWidget {
                     ),
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
-                      onLongPressStart: (details) => _showMessageMenu(
-                        context,
-                        anchor: details.globalPosition,
-                      ),
+                      onLongPressStart: (details) {
+                        final render = context.findRenderObject() as RenderBox?;
+                        _showMessageMenu(
+                          context,
+                          anchor: details.globalPosition,
+                          selectionIndex: _estimateSelectionIndex(
+                            message.content,
+                            details.localPosition,
+                            render?.size,
+                          ),
+                        );
+                      },
                       child: _UserBubbleFrame(
                         child: _MessageContent(message: message),
                       ),
@@ -823,10 +833,19 @@ class MessageBubble extends StatelessWidget {
                       )
                     : GestureDetector(
                         behavior: HitTestBehavior.opaque,
-                        onLongPressStart: (details) => _showMessageMenu(
-                          context,
-                          anchor: details.globalPosition,
-                        ),
+                        onLongPressStart: (details) {
+                          final render =
+                              context.findRenderObject() as RenderBox?;
+                          _showMessageMenu(
+                            context,
+                            anchor: details.globalPosition,
+                            selectionIndex: _estimateSelectionIndex(
+                              message.content,
+                              details.localPosition,
+                              render?.size,
+                            ),
+                          );
+                        },
                         child: _MessageContent(message: message),
                       ),
               ),
@@ -863,6 +882,7 @@ class MessageBubble extends StatelessWidget {
   Future<void> _showMessageMenu(
     BuildContext context, {
     required Offset anchor,
+    required int selectionIndex,
   }) async {
     if (message.content.trim().isEmpty) {
       return;
@@ -875,6 +895,16 @@ class MessageBubble extends StatelessWidget {
           icon: Icons.copy_rounded,
           label: '全部复制',
           value: 'copy',
+        ),
+        const _MenuAction(
+          icon: Icons.text_fields_rounded,
+          label: '自由选择',
+          value: 'select',
+        ),
+        const _MenuAction(
+          icon: Icons.menu_book_outlined,
+          label: '阅读',
+          value: 'read',
         ),
         if (message.isUser)
           const _MenuAction(
@@ -892,11 +922,142 @@ class MessageBubble extends StatelessWidget {
     );
     if (action == 'copy') {
       onCopy(message.content);
+    } else if (action == 'select') {
+      _openMessageReader(context, message.content, selectionIndex);
+    } else if (action == 'read') {
+      _openMessageReader(context, message.content, null);
     } else if (action == 'edit') {
       onEditUserMessage(message.content);
     } else if (action == 'regenerate') {
       onRegenerate();
     }
+  }
+
+  int _estimateSelectionIndex(String text, Offset localPosition, Size? size) {
+    if (text.isEmpty || size == null || size.width <= 0 || size.height <= 0) {
+      return 0;
+    }
+    final lines = text.split('\n');
+    final lineHeight = 24.0;
+    final visibleLine = (localPosition.dy / lineHeight)
+        .floor()
+        .clamp(0, lines.length - 1)
+        .toInt();
+    var offset = 0;
+    for (var index = 0; index < visibleLine; index += 1) {
+      offset += lines[index].length + 1;
+    }
+    final line = lines[visibleLine];
+    final ratio = (localPosition.dx / size.width).clamp(0.0, 1.0);
+    offset += (line.length * ratio).round();
+    return offset.clamp(0, text.length).toInt();
+  }
+}
+
+void _openMessageReader(
+  BuildContext context,
+  String content,
+  int? selectionIndex,
+) {
+  Navigator.of(context).push(
+    PageRouteBuilder<void>(
+      opaque: true,
+      pageBuilder: (_, animation, __) => _MessageReaderPage(
+        content: content,
+        selectionIndex: selectionIndex,
+      ),
+      transitionsBuilder: (_, animation, __, child) => FadeTransition(
+        opacity: CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+        child: child,
+      ),
+      transitionDuration: const Duration(milliseconds: 160),
+      reverseTransitionDuration: const Duration(milliseconds: 120),
+    ),
+  );
+}
+
+class _MessageReaderPage extends StatefulWidget {
+  const _MessageReaderPage({
+    required this.content,
+    required this.selectionIndex,
+  });
+
+  final String content;
+  final int? selectionIndex;
+
+  @override
+  State<_MessageReaderPage> createState() => _MessageReaderPageState();
+}
+
+class _MessageReaderPageState extends State<_MessageReaderPage> {
+  late final TextEditingController controller;
+  late final FocusNode focusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    controller = TextEditingController(text: widget.content);
+    focusNode = FocusNode();
+    final selectionIndex = widget.selectionIndex;
+    if (selectionIndex != null) {
+      final offset = selectionIndex.clamp(0, widget.content.length).toInt();
+      controller.selection = TextSelection.collapsed(offset: offset);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          focusNode.requestFocus();
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const selectionColor = Color(0x663B82F6);
+    const cursorColor = Color(0xFF2563EB);
+    return TextSelectionTheme(
+      data: const TextSelectionThemeData(
+        cursorColor: cursorColor,
+        selectionColor: selectionColor,
+        selectionHandleColor: cursorColor,
+      ),
+      child: Scaffold(
+        backgroundColor: _background(context),
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 22),
+            child: TextField(
+              controller: controller,
+              focusNode: focusNode,
+              readOnly: true,
+              showCursor: widget.selectionIndex != null,
+              enableInteractiveSelection: true,
+              expands: true,
+              maxLines: null,
+              minLines: null,
+              cursorColor: cursorColor,
+              decoration: const InputDecoration(
+                border: InputBorder.none,
+                isCollapsed: true,
+              ),
+              style: TextStyle(
+                color: _textColor(context),
+                fontSize: 17,
+                height: 1.72,
+                letterSpacing: 0,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -1119,31 +1280,21 @@ class _GenerationStatusTextState extends State<_GenerationStatusText>
             : 0.70 - (value - 0.5) * 0.52;
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 9),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _StatusWave(
-                color: _mutedColor(context),
-                progress: value,
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeOutCubic,
+            child: Text(
+              label,
+              key: ValueKey(label),
+              style: TextStyle(
+                color: _mutedColor(context).withValues(alpha: pulse),
+                fontSize: 13.5,
+                height: 1.45,
+                letterSpacing: 0,
+                fontWeight: FontWeight.w500,
               ),
-              const SizedBox(width: 8),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 180),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeOutCubic,
-                child: Text(
-                  label,
-                  key: ValueKey(label),
-                  style: TextStyle(
-                    color: _mutedColor(context).withValues(alpha: pulse),
-                    fontSize: 13.5,
-                    height: 1.45,
-                    letterSpacing: 0,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
         );
       },
@@ -1161,63 +1312,6 @@ class _GenerationStatusTextState extends State<_GenerationStatusText>
           : text.substring(0, text.length - 3).trim();
     }
     return text;
-  }
-}
-
-class _StatusWave extends StatelessWidget {
-  const _StatusWave({
-    required this.color,
-    required this.progress,
-  });
-
-  final Color color;
-  final double progress;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 24,
-      height: 10,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          for (var index = 0; index < 3; index += 1)
-            _StatusDot(
-              color: color,
-              progress: (progress + index * 0.18) % 1,
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatusDot extends StatelessWidget {
-  const _StatusDot({
-    required this.color,
-    required this.progress,
-  });
-
-  final Color color;
-  final double progress;
-
-  @override
-  Widget build(BuildContext context) {
-    final wave = progress < 0.5 ? progress * 2 : (1 - progress) * 2;
-    return Transform.translate(
-      offset: Offset(0, -2.4 * wave),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 90),
-        curve: Curves.easeOutCubic,
-        width: 4.5 + wave * 1.5,
-        height: 4.5 + wave * 1.5,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: color.withValues(alpha: 0.30 + wave * 0.34),
-        ),
-      ),
-    );
   }
 }
 
@@ -1292,129 +1386,140 @@ class _ComposerState extends State<Composer> {
             widget.onSurfaceProbe();
           });
         },
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                _background(context).withValues(alpha: 0),
-                _background(context).withValues(alpha: 0.72),
-                _background(context),
-              ],
-              stops: const [0, 0.48, 1],
-            ),
-          ),
-          padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 190),
-            curve: Curves.easeOutCubic,
-            constraints: const BoxConstraints(minHeight: 48, maxHeight: 154),
-            padding: const EdgeInsets.fromLTRB(5, 4, 5, 4),
-            decoration: BoxDecoration(
-              color: _surface(context),
-              borderRadius: BorderRadius.circular(26),
-              boxShadow: [
-                BoxShadow(
-                  color: _shadowColor(context, 0.10),
-                  blurRadius: 24,
-                  spreadRadius: 1,
-                ),
-              ],
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Builder(
-                  builder: (buttonContext) {
-                    return IconButton(
-                      tooltip: '添加',
-                      visualDensity: VisualDensity.compact,
-                      icon: Icon(
-                        Icons.add_rounded,
-                        color: _mutedColor(context),
-                        size: 24,
-                      ),
-                      onPressed: () {
-                        final render =
-                            buttonContext.findRenderObject() as RenderBox?;
-                        final anchor = render == null
-                            ? Offset.zero
-                            : render.localToGlobal(
-                                render.size.center(Offset.zero),
-                              );
-                        widget.onOpenMenu(anchor);
-                      },
-                    );
-                  },
-                ),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 7),
-                    child: TextField(
-                      key: widget.textFieldKey,
-                      controller: widget.controller,
-                      focusNode: widget.focusNode,
-                      minLines: 1,
-                      maxLines: 6,
-                      textInputAction: TextInputAction.newline,
-                      cursorColor: sendColor,
-                      onTap: () {
-                        AppLogger.instance.info('composer', 'textField tap');
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          widget.onSurfaceProbe();
-                        });
-                      },
-                      onTapOutside: (_) {
-                        AppLogger.instance.info('composer', 'textField tapOutside');
-                        widget.focusNode.unfocus();
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          widget.onSurfaceProbe();
-                        });
-                      },
-                      decoration: InputDecoration(
-                        isDense: true,
-                        border: InputBorder.none,
-                        hintText: '问点什么…',
-                        hintStyle: TextStyle(
-                          color: _mutedColor(context),
-                          fontSize: 15.5,
-                        ),
-                      ),
-                      style: TextStyle(
-                        color: sendColor,
-                        fontSize: 15.5,
-                        height: 1.35,
-                        letterSpacing: 0,
-                      ),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        _background(context).withValues(alpha: 0),
+                        _background(context).withValues(alpha: 0.48),
+                      ],
                     ),
                   ),
                 ),
-                const SizedBox(width: 4),
-                IconButton(
-                  tooltip: widget.isSending ? '停止' : '发送',
-                  visualDensity: VisualDensity.compact,
-                  style: IconButton.styleFrom(
-                    backgroundColor: widget.isSending || hasText
-                        ? sendColor
-                        : _softColor(context),
-                    foregroundColor: _background(context),
-                    disabledForegroundColor: _mutedColor(context),
-                    fixedSize: const Size(36, 36),
-                  ),
-                  icon: Icon(
-                    widget.isSending ? Icons.stop_rounded : Icons.arrow_upward,
-                    size: 19,
-                  ),
-                  onPressed: widget.isSending
-                      ? widget.onStop
-                      : hasText
-                          ? widget.onSend
-                          : null,
-                ),
-              ],
+              ),
             ),
-          ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 190),
+                curve: Curves.easeOutCubic,
+                constraints: const BoxConstraints(minHeight: 48, maxHeight: 154),
+                padding: const EdgeInsets.fromLTRB(5, 4, 5, 4),
+                decoration: BoxDecoration(
+                  color: _surface(context),
+                  borderRadius: BorderRadius.circular(26),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _shadowColor(context, 0.10),
+                      blurRadius: 24,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Builder(
+                      builder: (buttonContext) {
+                        return IconButton(
+                          tooltip: '添加',
+                          visualDensity: VisualDensity.compact,
+                          icon: Icon(
+                            Icons.add_rounded,
+                            color: _mutedColor(context),
+                            size: 24,
+                          ),
+                          onPressed: () {
+                            final render =
+                                buttonContext.findRenderObject() as RenderBox?;
+                            final anchor = render == null
+                                ? Offset.zero
+                                : render.localToGlobal(
+                                    render.size.center(Offset.zero),
+                                  );
+                            widget.onOpenMenu(anchor);
+                          },
+                        );
+                      },
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 7),
+                        child: TextField(
+                          key: widget.textFieldKey,
+                          controller: widget.controller,
+                          focusNode: widget.focusNode,
+                          minLines: 1,
+                          maxLines: 6,
+                          textInputAction: TextInputAction.newline,
+                          cursorColor: sendColor,
+                          onTap: () {
+                            AppLogger.instance.info('composer', 'textField tap');
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              widget.onSurfaceProbe();
+                            });
+                          },
+                          onTapOutside: (_) {
+                            AppLogger.instance
+                                .info('composer', 'textField tapOutside');
+                            widget.focusNode.unfocus();
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              widget.onSurfaceProbe();
+                            });
+                          },
+                          decoration: InputDecoration(
+                            isDense: true,
+                            border: InputBorder.none,
+                            hintText: '问点什么…',
+                            hintStyle: TextStyle(
+                              color: _mutedColor(context),
+                              fontSize: 15.5,
+                            ),
+                          ),
+                          style: TextStyle(
+                            color: sendColor,
+                            fontSize: 15.5,
+                            height: 1.35,
+                            letterSpacing: 0,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    IconButton(
+                      tooltip: widget.isSending ? '停止' : '发送',
+                      visualDensity: VisualDensity.compact,
+                      style: IconButton.styleFrom(
+                        backgroundColor: widget.isSending || hasText
+                            ? sendColor
+                            : _softColor(context),
+                        foregroundColor: _background(context),
+                        disabledForegroundColor: _mutedColor(context),
+                        fixedSize: const Size(36, 36),
+                      ),
+                      icon: Icon(
+                        widget.isSending
+                            ? Icons.stop_rounded
+                            : Icons.arrow_upward,
+                        size: 19,
+                      ),
+                      onPressed: widget.isSending
+                          ? widget.onStop
+                          : hasText
+                              ? widget.onSend
+                              : null,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1881,34 +1986,48 @@ class _RoundShadowButton extends StatelessWidget {
   const _RoundShadowButton({
     required this.icon,
     required this.tooltip,
-    required this.onTap,
+    this.onTap,
+    this.onPressed,
+    this.compact = false,
   });
 
   final IconData icon;
   final String tooltip;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
+  final VoidCallback? onPressed;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: _surface(context),
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: _shadowColor(context, 0.12),
-            blurRadius: 24,
-            spreadRadius: 1,
+    final size = compact ? 40.0 : 46.0;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: _surface(context),
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: _shadowColor(context, 0.12),
+              blurRadius: 24,
+              spreadRadius: 1,
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          shape: const CircleBorder(),
+          child: IconButton(
+            tooltip: tooltip,
+            padding: EdgeInsets.zero,
+            icon: Icon(
+              icon,
+              color: _mutedColor(context),
+              size: compact ? 19 : 20,
+            ),
+            onPressed: onPressed ?? onTap,
           ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        shape: const CircleBorder(),
-        child: IconButton(
-          tooltip: tooltip,
-          icon: Icon(icon, color: _textColor(context), size: 20),
-          onPressed: onTap,
         ),
       ),
     );
@@ -1953,41 +2072,53 @@ Future<String?> _showContextMenu(
     pageBuilder: (context, _, __) {
       final size = MediaQuery.sizeOf(context);
       final padding = MediaQuery.paddingOf(context);
-      final width = (size.width * 0.64).clamp(216.0, 320.0).toDouble();
-      final estimatedHeight = (children.length * 56.0).clamp(56.0, 360.0);
-      final left = anchor.dx.clamp(10.0, size.width - width - 10).toDouble();
-      final top = anchor.dy.clamp(
-        padding.top + 8,
-        size.height - estimatedHeight - padding.bottom - 10,
-      ).toDouble();
+      final placement = _menuPlacement(
+        size: size,
+        padding: padding,
+        anchor: anchor,
+        width: (size.width * 0.68).clamp(216.0, 320.0).toDouble(),
+        estimatedHeight: (children.length * 56.0).clamp(56.0, 420.0).toDouble(),
+      );
       return Stack(
         children: [
           Positioned(
-            left: left,
-            top: top,
-            width: width,
+            left: placement.left,
+            top: placement.top,
+            width: placement.width,
             child: Material(
               color: Colors.transparent,
-              child: Container(
-                constraints: BoxConstraints(
-                  maxHeight: size.height * 0.62,
-                ),
-                decoration: BoxDecoration(
-                  color: _surface(context),
-                  borderRadius: BorderRadius.circular(18),
-                  boxShadow: [
-                    BoxShadow(
-                      color: _shadowColor(context, 0.14),
-                      blurRadius: 30,
-                      spreadRadius: 1,
-                    ),
-                  ],
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: ListView(
-                  shrinkWrap: true,
-                  padding: EdgeInsets.zero,
-                  children: children,
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0.94, end: 1),
+                duration: const Duration(milliseconds: 170),
+                curve: Curves.easeOutCubic,
+                builder: (context, scale, child) {
+                  return Transform.scale(
+                    scale: scale,
+                    alignment: placement.alignment,
+                    child: child,
+                  );
+                },
+                child: Container(
+                  constraints: BoxConstraints(
+                    maxHeight: placement.maxHeight,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _surface(context),
+                    borderRadius: BorderRadius.circular(18),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _shadowColor(context, 0.14),
+                        blurRadius: 30,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: ListView(
+                    shrinkWrap: true,
+                    padding: EdgeInsets.zero,
+                    children: children,
+                  ),
                 ),
               ),
             ),
@@ -1996,17 +2127,65 @@ Future<String?> _showContextMenu(
       );
     },
     transitionBuilder: (context, animation, _, child) {
-      final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
-      return FadeTransition(
-        opacity: animation,
-        child: ScaleTransition(
-          scale: Tween<double>(begin: 0.96, end: 1).animate(curved),
-          alignment: Alignment.topLeft,
-          child: child,
-        ),
-      );
+      return FadeTransition(opacity: animation, child: child);
     },
   );
+}
+
+_MenuPlacement _menuPlacement({
+  required Size size,
+  required EdgeInsets padding,
+  required Offset anchor,
+  required double width,
+  required double estimatedHeight,
+}) {
+  const margin = 10.0;
+  final safeTop = padding.top + margin;
+  final safeBottom = size.height - padding.bottom - margin;
+  final spaceBelow = safeBottom - anchor.dy;
+  final spaceAbove = anchor.dy - safeTop;
+  final openAbove = spaceBelow < estimatedHeight && spaceAbove > spaceBelow;
+  final maxHeight = (openAbove ? spaceAbove : spaceBelow)
+      .clamp(96.0, size.height * 0.72)
+      .toDouble();
+  final actualHeight = estimatedHeight.clamp(56.0, maxHeight).toDouble();
+  final alignRight = anchor.dx + width > size.width - margin;
+  final left = alignRight
+      ? (anchor.dx - width)
+          .clamp(margin, size.width - width - margin)
+          .toDouble()
+      : anchor.dx.clamp(margin, size.width - width - margin).toDouble();
+  final top = openAbove
+      ? (anchor.dy - actualHeight)
+          .clamp(safeTop, safeBottom - actualHeight)
+          .toDouble()
+      : anchor.dy.clamp(safeTop, safeBottom - actualHeight).toDouble();
+  return _MenuPlacement(
+    left: left,
+    top: top,
+    width: width,
+    maxHeight: maxHeight,
+    alignment: Alignment(
+      alignRight ? 1 : -1,
+      openAbove ? 1 : -1,
+    ),
+  );
+}
+
+class _MenuPlacement {
+  const _MenuPlacement({
+    required this.left,
+    required this.top,
+    required this.width,
+    required this.maxHeight,
+    required this.alignment,
+  });
+
+  final double left;
+  final double top;
+  final double width;
+  final double maxHeight;
+  final Alignment alignment;
 }
 
 class _SheetSearchField extends StatelessWidget {

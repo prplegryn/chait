@@ -189,12 +189,18 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
         return _FadedSettingsScaffold(
           title: '服务商设定',
           actions: [
-              IconButton(
-                tooltip: '添加服务商',
-                icon: const Icon(Icons.add_rounded),
-                onPressed: _showAddProvider,
-              ),
-            ],
+            Builder(
+              builder: (buttonContext) {
+                return IconButton(
+                  tooltip: '添加服务商',
+                  icon: const Icon(Icons.add_rounded),
+                  onPressed: () => _showAddProvider(
+                    _anchorFor(buttonContext),
+                  ),
+                );
+              },
+            ),
+          ],
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
             children: [
@@ -262,7 +268,7 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
     );
   }
 
-  Future<void> _showAddProvider() async {
+  Future<void> _showAddProvider(Offset anchor) async {
     final existing = widget.store.settings.providers.map((item) => item.id).toSet();
     final presets = defaultProviders()
         .where((provider) => !existing.contains(provider.id))
@@ -283,7 +289,11 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
         value: '__custom__',
       ),
     ];
-    final selected = await _showChoiceMenu(context, children: actions);
+    final selected = await _showChoiceMenu(
+      context,
+      anchor: anchor,
+      children: actions,
+    );
     if (!mounted || selected == null) {
       return;
     }
@@ -813,12 +823,18 @@ class _SearchSettingsPageState extends State<SearchSettingsPage> {
         return _FadedSettingsScaffold(
           title: '搜索服务',
           actions: [
-              IconButton(
-                tooltip: '添加搜索服务',
-                icon: const Icon(Icons.add_rounded),
-                onPressed: _showAddSearchProvider,
-              ),
-            ],
+            Builder(
+              builder: (buttonContext) {
+                return IconButton(
+                  tooltip: '添加搜索服务',
+                  icon: const Icon(Icons.add_rounded),
+                  onPressed: () => _showAddSearchProvider(
+                    _anchorFor(buttonContext),
+                  ),
+                );
+              },
+            ),
+          ],
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
             children: [
@@ -923,7 +939,7 @@ class _SearchSettingsPageState extends State<SearchSettingsPage> {
     );
   }
 
-  Future<void> _showAddSearchProvider() async {
+  Future<void> _showAddSearchProvider(Offset anchor) async {
     final existing =
         widget.store.settings.searchProviders.map((item) => item.id).toSet();
     final presets = defaultSearchProviders()
@@ -931,6 +947,7 @@ class _SearchSettingsPageState extends State<SearchSettingsPage> {
         .toList();
     final selected = await _showChoiceMenu(
       context,
+      anchor: anchor,
       children: [
         ...presets.map(
           (provider) => _MenuChoice(
@@ -1463,7 +1480,7 @@ class AssistantListPage extends StatelessWidget {
         return _FadedSettingsScaffold(
           title: '助手预设',
           actions: [
-              IconButton(
+            IconButton(
                 tooltip: '新建助手',
                 icon: const Icon(Icons.add_rounded),
                 onPressed: () => Navigator.of(context).push(
@@ -1479,8 +1496,8 @@ class AssistantListPage extends StatelessWidget {
                     ),
                   ),
                 ),
-              ),
-            ],
+            ),
+          ],
           child: ListView.separated(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
             itemCount: store.assistants.length,
@@ -1490,7 +1507,6 @@ class AssistantListPage extends StatelessWidget {
               return ListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text(assistant.name),
-                subtitle: Text(assistant.description),
                 trailing: PopupMenuButton<String>(
                   onSelected: (value) {
                     if (value == 'edit') {
@@ -2843,6 +2859,7 @@ class _MenuChoice extends StatelessWidget {
 
 Future<String?> _showChoiceMenu(
   BuildContext context, {
+  required Offset anchor,
   required List<_MenuChoice> children,
 }) {
   return showGeneralDialog<String>(
@@ -2852,49 +2869,124 @@ Future<String?> _showChoiceMenu(
     barrierColor: Colors.black.withValues(alpha: 0.08),
     transitionDuration: const Duration(milliseconds: 170),
     pageBuilder: (context, _, __) {
-      return Center(
-        child: Material(
-          color: Colors.transparent,
-          child: Container(
-            width: MediaQuery.sizeOf(context).width * 0.78,
-            constraints: const BoxConstraints(maxWidth: 380),
-            decoration: BoxDecoration(
-              color: _surface(context),
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: [
-                BoxShadow(
-                  color: _shadowColor(context, 0.14),
-                  blurRadius: 34,
-                  spreadRadius: 1,
+      final size = MediaQuery.sizeOf(context);
+      final padding = MediaQuery.paddingOf(context);
+      final placement = _choiceMenuPlacement(
+        size: size,
+        padding: padding,
+        anchor: anchor,
+        width: (size.width * 0.78).clamp(236.0, 380.0).toDouble(),
+        estimatedHeight: (children.length * 62.0).clamp(62.0, 480.0).toDouble(),
+      );
+      return Stack(
+        children: [
+          Positioned(
+            left: placement.left,
+            top: placement.top,
+            width: placement.width,
+            child: Material(
+              color: Colors.transparent,
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0.94, end: 1),
+                duration: const Duration(milliseconds: 170),
+                curve: Curves.easeOutCubic,
+                builder: (context, scale, child) {
+                  return Transform.scale(
+                    scale: scale,
+                    alignment: placement.alignment,
+                    child: child,
+                  );
+                },
+                child: Container(
+                  constraints: BoxConstraints(maxHeight: placement.maxHeight),
+                  decoration: BoxDecoration(
+                    color: _surface(context),
+                    borderRadius: BorderRadius.circular(22),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _shadowColor(context, 0.14),
+                        blurRadius: 34,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: ListView(
+                    shrinkWrap: true,
+                    padding: EdgeInsets.zero,
+                    children: children,
+                  ),
                 ),
-              ],
-            ),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.sizeOf(context).height * 0.72,
-              ),
-              child: ListView(
-                shrinkWrap: true,
-                padding: EdgeInsets.zero,
-                children: children,
               ),
             ),
           ),
-        ),
+        ],
       );
     },
     transitionBuilder: (context, animation, _, child) {
-      final curved =
-          CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
-      return FadeTransition(
-        opacity: animation,
-        child: ScaleTransition(
-          scale: Tween<double>(begin: 0.96, end: 1).animate(curved),
-          child: child,
-        ),
-      );
+      return FadeTransition(opacity: animation, child: child);
     },
   );
+}
+
+Offset _anchorFor(BuildContext context) {
+  final render = context.findRenderObject() as RenderBox?;
+  if (render == null) {
+    return Offset.zero;
+  }
+  return render.localToGlobal(render.size.center(Offset.zero));
+}
+
+_ChoiceMenuPlacement _choiceMenuPlacement({
+  required Size size,
+  required EdgeInsets padding,
+  required Offset anchor,
+  required double width,
+  required double estimatedHeight,
+}) {
+  const margin = 10.0;
+  final safeTop = padding.top + margin;
+  final safeBottom = size.height - padding.bottom - margin;
+  final spaceBelow = safeBottom - anchor.dy;
+  final spaceAbove = anchor.dy - safeTop;
+  final openAbove = spaceBelow < estimatedHeight && spaceAbove > spaceBelow;
+  final maxHeight = (openAbove ? spaceAbove : spaceBelow)
+      .clamp(96.0, size.height * 0.72)
+      .toDouble();
+  final actualHeight = estimatedHeight.clamp(62.0, maxHeight).toDouble();
+  final alignRight = anchor.dx + width > size.width - margin;
+  final left = alignRight
+      ? (anchor.dx - width).clamp(margin, size.width - width - margin).toDouble()
+      : anchor.dx.clamp(margin, size.width - width - margin).toDouble();
+  final top = openAbove
+      ? (anchor.dy - actualHeight).clamp(safeTop, safeBottom - actualHeight).toDouble()
+      : anchor.dy.clamp(safeTop, safeBottom - actualHeight).toDouble();
+  return _ChoiceMenuPlacement(
+    left: left,
+    top: top,
+    width: width,
+    maxHeight: maxHeight,
+    alignment: Alignment(
+      alignRight ? 1 : -1,
+      openAbove ? 1 : -1,
+    ),
+  );
+}
+
+class _ChoiceMenuPlacement {
+  const _ChoiceMenuPlacement({
+    required this.left,
+    required this.top,
+    required this.width,
+    required this.maxHeight,
+    required this.alignment,
+  });
+
+  final double left;
+  final double top;
+  final double width;
+  final double maxHeight;
+  final Alignment alignment;
 }
 
 class _EditScaffold extends StatelessWidget {
@@ -2918,7 +3010,7 @@ class _EditScaffold extends StatelessWidget {
       body: Stack(
         children: [
           ListView(
-            padding: EdgeInsets.fromLTRB(16, top + 120, 16, 28),
+            padding: EdgeInsets.fromLTRB(16, top + 76, 16, 28),
             children: [child],
           ),
           Positioned(
@@ -2926,7 +3018,7 @@ class _EditScaffold extends StatelessWidget {
             right: 0,
             top: 0,
             child: SizedBox(
-              height: top + 112,
+              height: top + 78,
               child: Stack(
                 children: [
                   Positioned.fill(
@@ -2943,7 +3035,7 @@ class _EditScaffold extends StatelessWidget {
                             Color(0x68000000),
                             Color(0x00000000),
                           ],
-                          stops: [0, 0.48, 0.70, 0.90, 1],
+                          stops: [0, 0.52, 0.72, 0.90, 1],
                         ).createShader(bounds),
                         child: BackdropFilter(
                           filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
@@ -2961,11 +3053,11 @@ class _EditScaffold extends StatelessWidget {
                           colors: [
                             bg,
                             bg.withValues(alpha: 0.99),
-                            bg.withValues(alpha: 0.88),
-                            bg.withValues(alpha: 0.46),
+                            bg.withValues(alpha: 0.80),
+                            bg.withValues(alpha: 0.22),
                             bg.withValues(alpha: 0),
                           ],
-                          stops: const [0, 0.46, 0.68, 0.88, 1],
+                          stops: const [0, 0.50, 0.70, 0.90, 1],
                         ),
                       ),
                     ),
@@ -3039,7 +3131,7 @@ class _FadedSettingsScaffold extends StatelessWidget {
       body: Stack(
         children: [
           Padding(
-            padding: EdgeInsets.only(top: top + 112),
+            padding: EdgeInsets.only(top: top + 66),
             child: child,
           ),
           Positioned(
@@ -3047,7 +3139,7 @@ class _FadedSettingsScaffold extends StatelessWidget {
             right: 0,
             top: 0,
             child: SizedBox(
-              height: top + 106,
+              height: top + 72,
               child: Stack(
                 children: [
                   Positioned.fill(
@@ -3064,7 +3156,7 @@ class _FadedSettingsScaffold extends StatelessWidget {
                             Color(0x68000000),
                             Color(0x00000000),
                           ],
-                          stops: [0, 0.48, 0.70, 0.90, 1],
+                          stops: [0, 0.52, 0.72, 0.90, 1],
                         ).createShader(bounds),
                         child: BackdropFilter(
                           filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
@@ -3082,11 +3174,11 @@ class _FadedSettingsScaffold extends StatelessWidget {
                           colors: [
                             bg,
                             bg.withValues(alpha: 0.99),
-                            bg.withValues(alpha: 0.88),
-                            bg.withValues(alpha: 0.46),
+                            bg.withValues(alpha: 0.78),
+                            bg.withValues(alpha: 0.20),
                             bg.withValues(alpha: 0),
                           ],
-                          stops: const [0, 0.46, 0.68, 0.88, 1],
+                          stops: const [0, 0.50, 0.70, 0.90, 1],
                         ),
                       ),
                     ),

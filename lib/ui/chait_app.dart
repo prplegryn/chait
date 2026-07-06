@@ -128,6 +128,11 @@ ThemeData _buildTheme({
       backgroundColor: dark ? const Color(0xFF242424) : const Color(0xFF111111),
       contentTextStyle: const TextStyle(color: Colors.white),
     ),
+    textSelectionTheme: const TextSelectionThemeData(
+      cursorColor: Color(0xFF2563EB),
+      selectionColor: Color(0x663B82F6),
+      selectionHandleColor: Color(0xFF2563EB),
+    ),
   );
 }
 
