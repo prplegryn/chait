@@ -29,12 +29,29 @@ Color _shadowColor(BuildContext context, [double alpha = 0.08]) =>
         ? Colors.black.withValues(alpha: alpha + 0.12)
         : Colors.black.withValues(alpha: alpha);
 
-String _avatarPreviewText(String value, {int max = 1}) {
-  final trimmed = value.trim();
-  if (trimmed.isEmpty) {
-    return '助';
-  }
-  return String.fromCharCodes(trimmed.runes.take(max));
+Route<T> chaitPageRoute<T>(Widget page) {
+  return PageRouteBuilder<T>(
+    pageBuilder: (context, animation, secondaryAnimation) => page,
+    transitionDuration: const Duration(milliseconds: 220),
+    reverseTransitionDuration: const Duration(milliseconds: 180),
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      );
+      return FadeTransition(
+        opacity: Tween<double>(begin: 0.0, end: 1.0).animate(curved),
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0.025, 0),
+            end: Offset.zero,
+          ).animate(curved),
+          child: child,
+        ),
+      );
+    },
+  );
 }
 
 class SettingsScreen extends StatelessWidget {
@@ -57,7 +74,7 @@ class SettingsScreen extends StatelessWidget {
                   _SettingsTile(
                     title: '助手预设',
                     subtitle: '语气、角色、系统提示词',
-                    icon: Icons.person_outline_rounded,
+                    icon: Icons.extension_outlined,
                     onTap: () => _open(
                       context,
                       AssistantListPage(store: store),
@@ -132,7 +149,7 @@ class SettingsScreen extends StatelessWidget {
   }
 
   void _open(BuildContext context, Widget page) {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+    Navigator.of(context).push(chaitPageRoute(page));
   }
 }
 
@@ -221,14 +238,14 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
                                   height: 1.2,
                                 ),
                               ),
-                      ),
+                            ),
                       trailing: Icon(
                         Icons.chevron_right_rounded,
                         color: _mutedColor(context),
                       ),
                       onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => ProviderDetailPage(
+                        chaitPageRoute(
+                          ProviderDetailPage(
                             store: widget.store,
                             providerId: provider.id,
                           ),
@@ -287,8 +304,8 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
       return;
     }
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ProviderDetailPage(
+      chaitPageRoute(
+        ProviderDetailPage(
           store: widget.store,
           providerId: provider.id,
         ),
@@ -339,6 +356,7 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
   bool loading = false;
   String testingModelId = '';
   String error = '';
+  String modelQuery = '';
 
   @override
   void initState() {
@@ -505,8 +523,17 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
 
   @override
   Widget build(BuildContext context) {
+    final modelSearch = modelQuery.trim().toLowerCase();
     final models = widget.store.settings.models
         .where((model) => model.providerId == provider.id)
+        .where((model) {
+          if (modelSearch.isEmpty) {
+            return true;
+          }
+          return model.name.toLowerCase().contains(modelSearch) ||
+              model.displayName.toLowerCase().contains(modelSearch) ||
+              _modelMeta(model).toLowerCase().contains(modelSearch);
+        })
         .toList()
       ..sort((a, b) => a.name.compareTo(b.name));
     return AnimatedBuilder(
@@ -605,8 +632,13 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
                 ),
               ),
               const SizedBox(height: 8),
+              _FloatingSearchField(
+                hint: '搜索已添加模型',
+                onChanged: (value) => setState(() => modelQuery = value),
+              ),
+              const SizedBox(height: 12),
               if (models.isEmpty)
-                const _EmptyLine('暂无模型')
+                const _EmptyLine('暂无匹配模型')
               else
                 ...models.map(
                   (model) => Padding(
@@ -872,8 +904,8 @@ class _SearchSettingsPageState extends State<SearchSettingsPage> {
                           ],
                         ),
                         onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => SearchProviderDetailPage(
+                          chaitPageRoute(
+                            SearchProviderDetailPage(
                               store: widget.store,
                               providerId: provider.id,
                             ),
@@ -936,8 +968,8 @@ class _SearchSettingsPageState extends State<SearchSettingsPage> {
       return;
     }
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => SearchProviderDetailPage(
+      chaitPageRoute(
+        SearchProviderDetailPage(
           store: widget.store,
           providerId: provider.id,
         ),
@@ -1178,8 +1210,8 @@ class McpSettingsPage extends StatelessWidget {
                     return;
                   }
                   Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => McpServerDetailPage(
+                    chaitPageRoute(
+                      McpServerDetailPage(
                         store: store,
                         serverId: server.id,
                       ),
@@ -1223,8 +1255,8 @@ class McpSettingsPage extends StatelessWidget {
                         color: _mutedColor(context),
                       ),
                       onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => McpServerDetailPage(
+                        chaitPageRoute(
+                          McpServerDetailPage(
                             store: store,
                             serverId: server.id,
                           ),
@@ -1435,15 +1467,14 @@ class AssistantListPage extends StatelessWidget {
                 tooltip: '新建助手',
                 icon: const Icon(Icons.add_rounded),
                 onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => AssistantEditorPage(
+                  chaitPageRoute(
+                    AssistantEditorPage(
                       store: store,
                       preset: AssistantPreset(
                         id: newEntityId(),
                         name: '',
                         description: '',
                         systemPrompt: '',
-                        avatar: '助',
                       ),
                     ),
                   ),
@@ -1458,21 +1489,14 @@ class AssistantListPage extends StatelessWidget {
               final assistant = store.assistants[index];
               return ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: _AssistantAvatarPreview(
-                  imagePath: assistant.avatarImagePath,
-                  text: assistant.avatar.trim().isNotEmpty
-                      ? assistant.avatar
-                      : assistant.name,
-                  size: 42,
-                ),
                 title: Text(assistant.name),
                 subtitle: Text(assistant.description),
                 trailing: PopupMenuButton<String>(
                   onSelected: (value) {
                     if (value == 'edit') {
                       Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => AssistantEditorPage(
+                        chaitPageRoute(
+                          AssistantEditorPage(
                             store: store,
                             preset: AssistantPreset.fromJson(
                               assistant.toJson(),
@@ -1490,8 +1514,8 @@ class AssistantListPage extends StatelessWidget {
                   ],
                 ),
                 onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => AssistantEditorPage(
+                  chaitPageRoute(
+                    AssistantEditorPage(
                       store: store,
                       preset: AssistantPreset.fromJson(assistant.toJson()),
                     ),
@@ -1524,10 +1548,6 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
   late final TextEditingController name;
   late final TextEditingController description;
   late final TextEditingController prompt;
-  late final TextEditingController avatar;
-  late final TextEditingController age;
-  late final TextEditingController gender;
-  late final TextEditingController personality;
   late final TextEditingController relationship;
   late final TextEditingController communicationStyle;
   late final TextEditingController expertise;
@@ -1542,7 +1562,6 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
   late final TextEditingController temperature;
   late final TextEditingController topP;
   late final TextEditingController maxTokens;
-  late String avatarImagePath;
   late String wallpaperImagePath;
   late String preferredModelId;
   bool polishing = false;
@@ -1554,10 +1573,6 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
     name = TextEditingController(text: preset.name);
     description = TextEditingController(text: preset.description);
     prompt = TextEditingController(text: preset.systemPrompt);
-    avatar = TextEditingController(text: preset.avatar);
-    age = TextEditingController(text: preset.age);
-    gender = TextEditingController(text: preset.gender);
-    personality = TextEditingController(text: preset.personality);
     relationship = TextEditingController(text: preset.relationship);
     communicationStyle =
         TextEditingController(text: preset.communicationStyle);
@@ -1574,10 +1589,6 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
       name,
       description,
       prompt,
-      avatar,
-      age,
-      gender,
-      personality,
       relationship,
       communicationStyle,
       expertise,
@@ -1592,7 +1603,6 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
     ]) {
       controller.addListener(_onPromptChanged);
     }
-    avatarImagePath = preset.avatarImagePath;
     wallpaperImagePath = preset.wallpaperImagePath;
     preferredModelId = preset.preferredModelId;
     temperature = TextEditingController(text: preset.temperature?.toString());
@@ -1606,10 +1616,6 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
       name,
       description,
       prompt,
-      avatar,
-      age,
-      gender,
-      personality,
       relationship,
       communicationStyle,
       expertise,
@@ -1642,12 +1648,12 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
       ..name = name.text.trim()
       ..description = description.text.trim()
       ..systemPrompt = prompt.text.trim()
-      ..avatar = avatar.text.trim()
-      ..avatarImagePath = avatarImagePath.trim()
+      ..avatar = ''
+      ..avatarImagePath = ''
       ..wallpaperImagePath = wallpaperImagePath.trim()
-      ..age = age.text.trim()
-      ..gender = gender.text.trim()
-      ..personality = personality.text.trim()
+      ..age = ''
+      ..gender = ''
+      ..personality = ''
       ..relationship = relationship.text.trim()
       ..communicationStyle = communicationStyle.text.trim()
       ..expertise = expertise.text.trim()
@@ -1686,10 +1692,6 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
         name: name.text,
         description: description.text,
         systemPrompt: prompt.text,
-        avatar: avatar.text,
-        age: age.text,
-        gender: gender.text,
-        personality: personality.text,
         relationship: relationship.text,
         communicationStyle: communicationStyle.text,
         expertise: expertise.text,
@@ -1709,10 +1711,6 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
       name.text = result['name'] ?? name.text;
       description.text = result['description'] ?? description.text;
       prompt.text = result['systemPrompt'] ?? prompt.text;
-      avatar.text = result['avatar'] ?? avatar.text;
-      age.text = result['age'] ?? age.text;
-      gender.text = result['gender'] ?? gender.text;
-      personality.text = result['personality'] ?? personality.text;
       relationship.text = result['relationship'] ?? relationship.text;
       communicationStyle.text =
           result['communicationStyle'] ?? communicationStyle.text;
@@ -1754,7 +1752,7 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
           maxLines: 6,
           cursorColor: _textColor(context),
           decoration: InputDecoration(
-            hintText: '例如：说话自然、像耐心的中文学习伙伴，少用 emoji',
+            hintText: '例如：作为研究助理，先追问目标，再给结构化摘要和可核验来源',
             filled: true,
             fillColor: _softColor(context),
             border: OutlineInputBorder(
@@ -1779,84 +1777,6 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
     );
     controller.dispose();
     return result;
-  }
-
-  Future<void> _openAvatarDialog() async {
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            Future<void> pick() async {
-              final image = await ImagePicker().pickImage(
-                source: ImageSource.gallery,
-                maxWidth: 1200,
-                imageQuality: 92,
-              );
-              if (image == null || !mounted) {
-                return;
-              }
-              final savedPath = await _persistPickedImage(image);
-              if (!mounted) {
-                return;
-              }
-              setState(() => avatarImagePath = savedPath);
-              setDialogState(() {});
-            }
-
-            void clear() {
-              setState(() => avatarImagePath = '');
-              setDialogState(() {});
-            }
-
-            return _SoftDialog(
-              title: '头像',
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _AssistantAvatarPreview(
-                    imagePath: avatarImagePath,
-                    text: avatar.text.trim().isEmpty
-                        ? name.text
-                        : avatar.text,
-                    size: 118,
-                    borderWidth: 6,
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: avatar,
-                    maxLength: 2,
-                    cursorColor: _textColor(context),
-                    decoration: InputDecoration(
-                      counterText: '',
-                      hintText: '头像文字',
-                      filled: true,
-                      fillColor: _softColor(context),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(18),
-                        borderSide: BorderSide.none,
-                      ),
-                      contentPadding:
-                          const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                    ),
-                  ),
-                ],
-              ),
-              actions: [
-                if (avatarImagePath.trim().isNotEmpty)
-                  _DialogAction(label: '清除图片', onPressed: clear),
-                _DialogAction(label: '从相册选择', onPressed: pick),
-                _DialogAction(
-                  label: '完成',
-                  filled: true,
-                  onPressed: () => Navigator.pop(dialogContext),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
   }
 
   Future<void> _pickWallpaper() async {
@@ -1889,7 +1809,7 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
       onSave: _save,
       actions: [
         IconButton(
-          tooltip: '生成助手档案',
+          tooltip: '生成预设',
           onPressed: polishing ? null : _polish,
           icon: polishing
               ? SizedBox(
@@ -1907,30 +1827,24 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _AssistantProfileHeader(
-            avatar: avatar,
             name: name,
             description: description,
-            age: age,
-            gender: gender,
-            personality: personality,
-            avatarImagePath: avatarImagePath,
-            onAvatarTap: _openAvatarDialog,
           ),
           const SizedBox(height: 16),
           _AssistantSection(
-            title: '交流方式',
-            subtitle: '只规范语气和距离感，不写人物经历',
+            title: '交互方式',
+            subtitle: '定义这个预设如何服务用户，而不是设定人物身份',
             children: [
               _Field(
-                label: '关系距离',
-                hint: '朋友 / 同事 / 顾问 / 老师；亲近或克制的程度',
+                label: '服务边界',
+                hint: '编辑 / 技术协作者 / 学习教练 / 研究助理；何时追问，何时直接给方案',
                 controller: relationship,
                 minLines: 2,
                 maxLines: 4,
               ),
               _Field(
-                label: '表达习惯',
-                hint: '句长、正式度、术语密度、口语感、情绪回应方式',
+                label: '表达规范',
+                hint: '正式度、术语密度、解释深度、默认语气、是否先给结论',
                 controller: communicationStyle,
                 minLines: 3,
                 maxLines: 5,
@@ -1938,26 +1852,26 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
             ],
           ),
           _AssistantSection(
-            title: '知识与能力',
-            subtitle: '规定模型该表现成懂什么、不懂什么、何时查证',
+            title: '任务与知识范围',
+            subtitle: '规定可稳定完成的任务、知识边界和查证策略',
             children: [
               _Field(
-                label: '擅长领域',
-                hint: '可以自然自信回答的知识和任务范围',
+                label: '核心能力',
+                hint: '该预设主要完成的任务类型，例如写作、代码、研究、翻译、整理',
                 controller: expertise,
                 minLines: 3,
                 maxLines: 5,
               ),
               _Field(
-                label: '一般可聊',
-                hint: '可以用常识或一般经验交流，但不装专业的范围',
+                label: '知识范围',
+                hint: '允许基于常识、上下文或用户资料处理的主题',
                 controller: familiarTopics,
                 minLines: 2,
                 maxLines: 4,
               ),
               _Field(
-                label: '不擅长/需查证',
-                hint: '不该强答的范围，实时信息、高风险领域、具体事实等',
+                label: '边界限制',
+                hint: '不该强答的范围：实时信息、高风险领域、未提供上下文的具体事实等',
                 controller: limitedTopics,
                 minLines: 3,
                 maxLines: 5,
@@ -1972,32 +1886,32 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
             ],
           ),
           _AssistantSection(
-            title: '高级设定',
-            subtitle: '把“不像机器”的限制写在这里',
+            title: '输出规范',
+            subtitle: '控制格式、篇幅、工具使用和高优先级约束',
             children: [
               _Field(
-                label: 'Emoji',
-                hint: '默认少用；需要时自然点到为止，禁止连续堆叠',
+                label: '语气限制',
+                hint: '少用 emoji、避免口号、避免过度热情、不要机械道歉等',
                 controller: emojiRules,
                 minLines: 2,
                 maxLines: 4,
               ),
               _Field(
-                label: '分段',
-                hint: '不要每句另起一段，不要固定三段式，按内容自然排版',
+                label: '结构与篇幅',
+                hint: '长短回答、是否先结论、是否分步骤、不要固定三段式',
                 controller: paragraphRules,
                 minLines: 2,
                 maxLines: 4,
               ),
               _Field(
-                label: '排版',
+                label: '格式',
                 hint: 'Markdown、代码、公式、表格、引用、长短文结构偏好',
                 controller: markdownRules,
                 minLines: 2,
                 maxLines: 4,
               ),
               _Field(
-                label: '工具',
+                label: '工具使用',
                 hint: '何时搜索、读系统时间、用 MCP 或附件；不要无脑先搜索',
                 controller: toolRules,
                 minLines: 2,
@@ -2005,7 +1919,7 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
               ),
               _Field(
                 label: '高级约束',
-                hint: '避免模板话、空泛赞同、过度免责声明、暴露系统设定等',
+                hint: '不要暴露系统设定、不要编造来源、避免模板话和空泛赞同',
                 controller: advancedRules,
                 minLines: 4,
                 maxLines: 7,
@@ -2068,168 +1982,35 @@ class _AssistantEditorPageState extends State<AssistantEditorPage> {
 
 class _AssistantProfileHeader extends StatelessWidget {
   const _AssistantProfileHeader({
-    required this.avatar,
     required this.name,
     required this.description,
-    required this.age,
-    required this.gender,
-    required this.personality,
-    required this.avatarImagePath,
-    required this.onAvatarTap,
   });
 
-  final TextEditingController avatar;
   final TextEditingController name;
   final TextEditingController description;
-  final TextEditingController age;
-  final TextEditingController gender;
-  final TextEditingController personality;
-  final String avatarImagePath;
-  final VoidCallback onAvatarTap;
 
   @override
   Widget build(BuildContext context) {
-    final symbol = avatar.text.trim().isEmpty ? '助' : avatar.text.trim();
     return _SettingsCard(
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                GestureDetector(
-                  onTap: onAvatarTap,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      _AssistantAvatarPreview(
-                        imagePath: avatarImagePath,
-                        text: symbol,
-                        size: 62,
-                      ),
-                      Positioned(
-                        right: -2,
-                        bottom: -2,
-                        child: Container(
-                          width: 24,
-                          height: 24,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: _textColor(context),
-                            boxShadow: [
-                              BoxShadow(
-                                color: _shadowColor(context, 0.18),
-                                blurRadius: 14,
-                              ),
-                            ],
-                          ),
-                          child: Icon(
-                            Icons.photo_camera_outlined,
-                            size: 13,
-                            color: _background(context),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    children: [
-                      _Field(
-                        label: '名称',
-                        hint: '写作助手',
-                        controller: name,
-                      ),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _Field(
-                              label: '年龄感',
-                              hint: '可不填',
-                              controller: age,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: _Field(
-                              label: '性别表达',
-                              hint: '可不填',
-                              controller: gender,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+            _Field(
+              label: '名称',
+              hint: '写作助手',
+              controller: name,
             ),
             _Field(
-              label: '性格特征',
-              hint: '稳定、自然、可执行的交流特征，不写故事经历',
-              controller: personality,
-              minLines: 2,
-              maxLines: 4,
-            ),
-            _Field(
-              label: '一句话定位',
-              hint: '这个助手适合做什么',
+              label: '用途说明',
+              hint: '这个预设适合处理什么任务，给谁用，输出偏向什么',
               controller: description,
               minLines: 2,
               maxLines: 3,
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _AssistantAvatarPreview extends StatelessWidget {
-  const _AssistantAvatarPreview({
-    required this.imagePath,
-    required this.text,
-    required this.size,
-    this.borderWidth = 1,
-  });
-
-  final String imagePath;
-  final String text;
-  final double size;
-  final double borderWidth;
-
-  @override
-  Widget build(BuildContext context) {
-    final path = imagePath.trim();
-    final hasImage = path.isNotEmpty && File(path).existsSync();
-    return Container(
-      width: size,
-      height: size,
-      padding: EdgeInsets.all(borderWidth),
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: _surface(context),
-        border: Border.all(color: _lineColor(context).withValues(alpha: 0.55)),
-      ),
-      child: ClipOval(
-        child: hasImage
-            ? Image.file(File(path), fit: BoxFit.cover)
-            : ColoredBox(
-                color: _softColor(context),
-                child: Center(
-                  child: Text(
-                    _avatarPreviewText(text, max: 2),
-                    style: TextStyle(
-                      color: _textColor(context),
-                      fontSize: size * 0.34,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
       ),
     );
   }
@@ -3104,10 +2885,13 @@ Future<String?> _showChoiceMenu(
     },
     transitionBuilder: (context, animation, _, child) {
       final curved =
-          CurvedAnimation(parent: animation, curve: Curves.easeOutBack);
+          CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
       return FadeTransition(
         opacity: animation,
-        child: ScaleTransition(scale: curved, child: child),
+        child: ScaleTransition(
+          scale: Tween<double>(begin: 0.96, end: 1).animate(curved),
+          child: child,
+        ),
       );
     },
   );
@@ -3134,7 +2918,7 @@ class _EditScaffold extends StatelessWidget {
       body: Stack(
         children: [
           ListView(
-            padding: EdgeInsets.fromLTRB(16, top + 72, 16, 28),
+            padding: EdgeInsets.fromLTRB(16, top + 120, 16, 28),
             children: [child],
           ),
           Positioned(
@@ -3142,7 +2926,7 @@ class _EditScaffold extends StatelessWidget {
             right: 0,
             top: 0,
             child: SizedBox(
-              height: top + 88,
+              height: top + 112,
               child: Stack(
                 children: [
                   Positioned.fill(
@@ -3155,10 +2939,11 @@ class _EditScaffold extends StatelessWidget {
                           colors: [
                             Colors.black,
                             Colors.black,
-                            Color(0xAA000000),
+                            Color(0xE0000000),
+                            Color(0x68000000),
                             Color(0x00000000),
                           ],
-                          stops: [0, 0.58, 0.80, 1],
+                          stops: [0, 0.48, 0.70, 0.90, 1],
                         ).createShader(bounds),
                         child: BackdropFilter(
                           filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
@@ -3175,17 +2960,18 @@ class _EditScaffold extends StatelessWidget {
                           end: Alignment.bottomCenter,
                           colors: [
                             bg,
-                            bg.withValues(alpha: 0.98),
-                            bg.withValues(alpha: 0.78),
+                            bg.withValues(alpha: 0.99),
+                            bg.withValues(alpha: 0.88),
+                            bg.withValues(alpha: 0.46),
                             bg.withValues(alpha: 0),
                           ],
-                          stops: const [0, 0.58, 0.82, 1],
+                          stops: const [0, 0.46, 0.68, 0.88, 1],
                         ),
                       ),
                     ),
                   ),
                   Padding(
-                    padding: EdgeInsets.only(top: top + 4),
+                    padding: EdgeInsets.only(top: top + 2),
                     child: SizedBox(
                       height: 52,
                       child: Row(
@@ -3253,7 +3039,7 @@ class _FadedSettingsScaffold extends StatelessWidget {
       body: Stack(
         children: [
           Padding(
-            padding: EdgeInsets.only(top: top + 66),
+            padding: EdgeInsets.only(top: top + 112),
             child: child,
           ),
           Positioned(
@@ -3261,7 +3047,7 @@ class _FadedSettingsScaffold extends StatelessWidget {
             right: 0,
             top: 0,
             child: SizedBox(
-              height: top + 82,
+              height: top + 106,
               child: Stack(
                 children: [
                   Positioned.fill(
@@ -3274,10 +3060,11 @@ class _FadedSettingsScaffold extends StatelessWidget {
                           colors: [
                             Colors.black,
                             Colors.black,
-                            Color(0xA0000000),
+                            Color(0xE0000000),
+                            Color(0x68000000),
                             Color(0x00000000),
                           ],
-                          stops: [0, 0.60, 0.82, 1],
+                          stops: [0, 0.48, 0.70, 0.90, 1],
                         ).createShader(bounds),
                         child: BackdropFilter(
                           filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
@@ -3294,17 +3081,18 @@ class _FadedSettingsScaffold extends StatelessWidget {
                           end: Alignment.bottomCenter,
                           colors: [
                             bg,
-                            bg.withValues(alpha: 0.98),
-                            bg.withValues(alpha: 0.72),
+                            bg.withValues(alpha: 0.99),
+                            bg.withValues(alpha: 0.88),
+                            bg.withValues(alpha: 0.46),
                             bg.withValues(alpha: 0),
                           ],
-                          stops: const [0, 0.62, 0.84, 1],
+                          stops: const [0, 0.46, 0.68, 0.88, 1],
                         ),
                       ),
                     ),
                   ),
                   Padding(
-                    padding: EdgeInsets.only(top: top + 4),
+                    padding: EdgeInsets.only(top: top + 2),
                     child: SizedBox(
                       height: 52,
                       child: Row(
@@ -3401,17 +3189,9 @@ class _ModelMetadataTile extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(14, 9, 8, 9),
         child: Row(
           children: [
-            Checkbox(
-              value: value,
-              fillColor: WidgetStateProperty.resolveWith(
-                (states) => states.contains(WidgetState.selected)
-                    ? _textColor(context)
-                    : null,
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(5),
-              ),
-              onChanged: (next) => onChanged(next ?? false),
+            _AnimatedCheckMark(
+              selected: value,
+              onTap: () => onChanged(!value),
             ),
             const SizedBox(width: 4),
             Expanded(
@@ -3458,6 +3238,53 @@ class _ModelMetadataTile extends StatelessWidget {
                     ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AnimatedCheckMark extends StatelessWidget {
+  const _AnimatedCheckMark({
+    required this.selected,
+    required this.onTap,
+  });
+
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(13),
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 170),
+        curve: Curves.easeOutCubic,
+        width: 28,
+        height: 28,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: selected ? _textColor(context) : Colors.transparent,
+          border: Border.all(
+            color: selected
+                ? _textColor(context)
+                : _lineColor(context).withValues(alpha: 0.9),
+          ),
+        ),
+        child: AnimatedScale(
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOutCubic,
+          scale: selected ? 1 : 0.72,
+          child: AnimatedOpacity(
+            duration: const Duration(milliseconds: 130),
+            opacity: selected ? 1 : 0,
+            child: Icon(
+              Icons.check_rounded,
+              size: 17,
+              color: _background(context),
+            ),
+          ),
         ),
       ),
     );
@@ -3712,60 +3539,85 @@ class _ModelPickerTile extends StatelessWidget {
       context: context,
       backgroundColor: Colors.transparent,
       builder: (context) {
-        return Container(
-          margin: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: _surface(context),
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(
-                color: _shadowColor(context, 0.12),
-                blurRadius: 30,
-                spreadRadius: 1,
+        var query = '';
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final normalized = query.trim().toLowerCase();
+            final filtered = models.where((model) {
+              if (normalized.isEmpty) {
+                return true;
+              }
+              return model.name.toLowerCase().contains(normalized) ||
+                  model.displayName.toLowerCase().contains(normalized) ||
+                  model.providerName.toLowerCase().contains(normalized) ||
+                  _modelMeta(model).toLowerCase().contains(normalized);
+            }).toList();
+            return Container(
+              margin: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: _surface(context),
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: _shadowColor(context, 0.12),
+                    blurRadius: 30,
+                    spreadRadius: 1,
+                  ),
+                ],
               ),
-            ],
-          ),
-          child: SafeArea(
-            top: false,
-            child: ListView(
-              shrinkWrap: true,
-              padding: const EdgeInsets.only(bottom: 10),
-              children: [
-                if (allowEmpty)
-                  ListTile(
-                    title: Text(emptyLabel),
-                    trailing: value.isEmpty ? const Icon(Icons.check_rounded) : null,
-                    onTap: () => Navigator.pop(context, ''),
-                  ),
-                if (models.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.all(18),
-                    child: Text(
-                      '暂无可选模型',
-                      style: TextStyle(color: _mutedColor(context)),
+              child: SafeArea(
+                top: false,
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.fromLTRB(0, 12, 0, 10),
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+                      child: _FloatingSearchField(
+                        hint: '搜索已添加模型',
+                        onChanged: (value) =>
+                            setSheetState(() => query = value),
+                      ),
                     ),
-                  ),
-                ...models.map(
-                  (model) => ListTile(
-                    title: Text(
-                      model.displayName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    if (allowEmpty)
+                      ListTile(
+                        title: Text(emptyLabel),
+                        trailing:
+                            value.isEmpty ? const Icon(Icons.check_rounded) : null,
+                        onTap: () => Navigator.pop(context, ''),
+                      ),
+                    if (filtered.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.all(18),
+                        child: Text(
+                          models.isEmpty ? '暂无可选模型' : '没有匹配模型',
+                          style: TextStyle(color: _mutedColor(context)),
+                        ),
+                      ),
+                    ...filtered.map(
+                      (model) => ListTile(
+                        title: Text(
+                          model.displayName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(
+                          '${model.providerName} · ${_modelMeta(model)}',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: _mutedColor(context)),
+                        ),
+                        trailing: value == model.id
+                            ? const Icon(Icons.check_rounded)
+                            : null,
+                        onTap: () => Navigator.pop(context, model.id),
+                      ),
                     ),
-                    subtitle: Text(
-                      '${model.providerName} · ${_modelMeta(model)}',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: _mutedColor(context)),
-                    ),
-                    trailing:
-                        value == model.id ? const Icon(Icons.check_rounded) : null,
-                    onTap: () => Navigator.pop(context, model.id),
-                  ),
+                  ],
                 ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );

@@ -219,11 +219,12 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Future<void> _openComposerMenu() async {
+  Future<void> _openComposerMenu(Offset anchor) async {
     final searchEnabled =
         widget.store.isSearchEnabledForSession(widget.store.currentSession);
-    final selected = await _showScaleMenu(
+    final selected = await _showContextMenu(
       context,
+      anchor: anchor,
       children: [
         const _MenuAction(
           icon: Icons.memory_rounded,
@@ -253,6 +254,22 @@ class _ChatScreenState extends State<ChatScreen> {
       }
       widget.store.setSessionSearchEnabled(!searchEnabled);
     }
+  }
+
+  void _copyMessageText(String text) {
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已复制')),
+    );
+  }
+
+  void _editUserMessage(String text) {
+    _inputController.text = text;
+    _inputController.selection = TextSelection.collapsed(offset: text.length);
+    _focusNode.requestFocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _logSurfaceState('editMessage');
+    });
   }
 
   bool _searchReady() {
@@ -301,24 +318,35 @@ class _ChatScreenState extends State<ChatScreen> {
                           ),
                           child: _EmptyChat(key: _emptyChatKey),
                         )
-                      : ListView.builder(
-                          controller: _scrollController,
-                          keyboardDismissBehavior:
-                              ScrollViewKeyboardDismissBehavior.onDrag,
-                          padding: EdgeInsets.fromLTRB(
-                            20,
-                            MediaQuery.paddingOf(context).top + 130,
-                            20,
-                            118,
-                          ),
-                          itemCount: session.messages.length,
-                          itemBuilder: (context, index) {
-                            return MessageBubble(
-                              key: ValueKey(session.messages[index].id),
-                              message: session.messages[index],
-                              onRegenerate: widget.store.regenerateLastAnswer,
-                            );
+                      : NotificationListener<UserScrollNotification>(
+                          onNotification: (notification) {
+                            if (widget.store.isSending &&
+                                notification.direction.name != 'idle') {
+                              _stickToBottom = _isNearBottom();
+                            }
+                            return false;
                           },
+                          child: ListView.builder(
+                            controller: _scrollController,
+                            keyboardDismissBehavior:
+                                ScrollViewKeyboardDismissBehavior.onDrag,
+                            padding: EdgeInsets.fromLTRB(
+                              20,
+                              MediaQuery.paddingOf(context).top + 130,
+                              20,
+                              118,
+                            ),
+                            itemCount: session.messages.length,
+                            itemBuilder: (context, index) {
+                              return MessageBubble(
+                                key: ValueKey(session.messages[index].id),
+                                message: session.messages[index],
+                                onRegenerate: widget.store.regenerateLastAnswer,
+                                onCopy: _copyMessageText,
+                                onEditUserMessage: _editUserMessage,
+                              );
+                            },
+                          ),
                         ),
                 ),
               ),
@@ -578,92 +606,52 @@ class _ChatTitle extends StatelessWidget {
       builder: (context, constraints) {
         final maxWidth =
             constraints.maxWidth.isFinite ? constraints.maxWidth : 220.0;
-        final textWidth = maxWidth <= 80
-            ? maxWidth
-            : (maxWidth - 46).clamp(80.0, maxWidth).toDouble();
+        final textWidth = maxWidth;
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
           onLongPress: onLongPress,
           child: Center(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _TitleAvatar(assistant: assistant),
-                const SizedBox(width: 8),
-                ConstrainedBox(
-                  constraints: BoxConstraints(maxWidth: textWidth),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        assistant.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: _textColor(context),
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          height: 1.1,
-                          letterSpacing: 0,
-                        ),
-                      ),
-                      if (showSessionTitle) ...[
-                        const SizedBox(height: 3),
-                        Text(
-                          sessionTitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: _mutedColor(context),
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w400,
-                            height: 1.1,
-                            letterSpacing: 0,
-                          ),
-                        ),
-                      ],
-                    ],
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: textWidth),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Text(
+                    assistant.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: _textColor(context),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      height: 1.1,
+                      letterSpacing: 0,
+                    ),
                   ),
-                ),
-              ],
+                  if (showSessionTitle) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      sessionTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: _mutedColor(context),
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w400,
+                        height: 1.1,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
         );
       },
-    );
-  }
-}
-
-class _TitleAvatar extends StatelessWidget {
-  const _TitleAvatar({required this.assistant});
-
-  final AssistantPreset assistant;
-
-  @override
-  Widget build(BuildContext context) {
-    final path = assistant.avatarImagePath.trim();
-    final hasImage = path.isNotEmpty && File(path).existsSync();
-    return Container(
-      width: 26,
-      height: 26,
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: _softColor(context),
-      ),
-      child: hasImage
-          ? Image.file(File(path), fit: BoxFit.cover)
-          : Center(
-              child: Text(
-                _avatarText(assistant),
-                style: TextStyle(
-                  color: _textColor(context),
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
     );
   }
 }
@@ -689,16 +677,6 @@ class _EmptyChat extends StatelessWidget {
       child: const SizedBox.expand(),
     );
   }
-}
-
-String _avatarText(AssistantPreset assistant) {
-  final source = assistant.avatar.trim().isEmpty
-      ? assistant.name.trim()
-      : assistant.avatar.trim();
-  if (source.isEmpty) {
-    return '助';
-  }
-  return String.fromCharCodes(source.runes.take(2));
 }
 
 class _ChatSoftDialog extends StatelessWidget {
@@ -789,10 +767,14 @@ class MessageBubble extends StatelessWidget {
     super.key,
     required this.message,
     required this.onRegenerate,
+    required this.onCopy,
+    required this.onEditUserMessage,
   });
 
   final ChatMessage message;
   final VoidCallback onRegenerate;
+  final ValueChanged<String> onCopy;
+  final ValueChanged<String> onEditUserMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -814,8 +796,15 @@ class MessageBubble extends StatelessWidget {
                     constraints: BoxConstraints(
                       maxWidth: constraints.maxWidth * 0.82,
                     ),
-                    child: _UserBubbleFrame(
-                      child: _MessageContent(message: message),
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onLongPressStart: (details) => _showMessageMenu(
+                        context,
+                        anchor: details.globalPosition,
+                      ),
+                      child: _UserBubbleFrame(
+                        child: _MessageContent(message: message),
+                      ),
                     ),
                   ),
                 );
@@ -832,7 +821,14 @@ class MessageBubble extends StatelessWidget {
                             ? '...'
                             : message.status.trim(),
                       )
-                    : _MessageContent(message: message),
+                    : GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onLongPressStart: (details) => _showMessageMenu(
+                          context,
+                          anchor: details.globalPosition,
+                        ),
+                        child: _MessageContent(message: message),
+                      ),
               ),
             ),
           if (!isUser && message.content.trim().isNotEmpty && !message.isStreaming)
@@ -862,6 +858,45 @@ class MessageBubble extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _showMessageMenu(
+    BuildContext context, {
+    required Offset anchor,
+  }) async {
+    if (message.content.trim().isEmpty) {
+      return;
+    }
+    final action = await _showContextMenu(
+      context,
+      anchor: anchor,
+      children: [
+        const _MenuAction(
+          icon: Icons.copy_rounded,
+          label: '全部复制',
+          value: 'copy',
+        ),
+        if (message.isUser)
+          const _MenuAction(
+            icon: Icons.edit_note_rounded,
+            label: '重新编辑',
+            value: 'edit',
+          )
+        else if (!message.isStreaming)
+          const _MenuAction(
+            icon: Icons.refresh_rounded,
+            label: '重新生成',
+            value: 'regenerate',
+          ),
+      ],
+    );
+    if (action == 'copy') {
+      onCopy(message.content);
+    } else if (action == 'edit') {
+      onEditUserMessage(message.content);
+    } else if (action == 'regenerate') {
+      onRegenerate();
+    }
   }
 }
 
@@ -914,7 +949,7 @@ class _UserBubbleFrameState extends State<_UserBubbleFrame>
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOutCubic,
-        padding: const EdgeInsets.fromLTRB(15, 10, 15, 10),
+        padding: const EdgeInsets.fromLTRB(15, 12, 15, 9),
         decoration: BoxDecoration(
           color: _userBubbleColor(context),
           borderRadius: const BorderRadius.only(
@@ -1077,37 +1112,35 @@ class _GenerationStatusTextState extends State<_GenerationStatusText>
     return AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
-        final isSearching = widget.text.contains('搜索') ||
-            widget.text.contains('读取') ||
-            widget.text.contains('工具');
-        final dots = widget.text.trim() == '...';
-        final pulse = controller.value < 0.5
-            ? 0.46 + controller.value * 0.28
-            : 0.74 - (controller.value - 0.5) * 0.28;
-        final label = isSearching
-            ? widget.text
-            : dots
-                ? '处理中'
-                : widget.text.trim().isEmpty
-                    ? '思考中'
-                    : widget.text;
+        final label = _statusLabel(widget.text);
+        final value = controller.value;
+        final pulse = value < 0.5
+            ? 0.44 + value * 0.52
+            : 0.70 - (value - 0.5) * 0.52;
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 9),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _StatusSignal(
-                progress: controller.value,
-                searching: isSearching,
+              _StatusWave(
+                color: _mutedColor(context),
+                progress: value,
               ),
-              const SizedBox(width: 9),
-              Text(
-                label,
-                style: TextStyle(
-                  color: _mutedColor(context).withValues(alpha: pulse),
-                  fontSize: 13.5,
-                  height: 1.45,
-                  letterSpacing: 0,
+              const SizedBox(width: 8),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeOutCubic,
+                child: Text(
+                  label,
+                  key: ValueKey(label),
+                  style: TextStyle(
+                    color: _mutedColor(context).withValues(alpha: pulse),
+                    fontSize: 13.5,
+                    height: 1.45,
+                    letterSpacing: 0,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
             ],
@@ -1116,74 +1149,73 @@ class _GenerationStatusTextState extends State<_GenerationStatusText>
       },
     );
   }
+
+  String _statusLabel(String raw) {
+    final text = raw.trim();
+    if (text.isEmpty || text == '...') {
+      return '思考中';
+    }
+    if (text.endsWith('...')) {
+      return text.substring(0, text.length - 3).trim().isEmpty
+          ? '思考中'
+          : text.substring(0, text.length - 3).trim();
+    }
+    return text;
+  }
 }
 
-class _StatusSignal extends StatelessWidget {
-  const _StatusSignal({
+class _StatusWave extends StatelessWidget {
+  const _StatusWave({
+    required this.color,
     required this.progress,
-    required this.searching,
   });
 
+  final Color color;
   final double progress;
-  final bool searching;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 38,
-      height: 16,
-      child: Stack(
-        clipBehavior: Clip.none,
+      width: 24,
+      height: 10,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Positioned(
-            left: 0,
-            right: 0,
-            top: 7,
-            child: Container(
-              height: 2,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(999),
-                color: _mutedColor(context).withValues(alpha: 0.12),
-              ),
+          for (var index = 0; index < 3; index += 1)
+            _StatusDot(
+              color: color,
+              progress: (progress + index * 0.18) % 1,
             ),
-          ),
-          Align(
-            alignment: Alignment(-1 + progress * 2, 0),
-            child: Container(
-              width: searching ? 18 : 12,
-              height: searching ? 6 : 6,
-              decoration: BoxDecoration(
-                color: _mutedColor(context).withValues(alpha: 0.34),
-                borderRadius: BorderRadius.circular(999),
-                boxShadow: [
-                  BoxShadow(
-                    color: _mutedColor(context).withValues(alpha: 0.14),
-                    blurRadius: 8,
-                    spreadRadius: 1,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (!searching)
-            ...List.generate(3, (index) {
-              final phase = (progress + index * 0.18) % 1;
-              final opacity =
-                  phase < 0.5 ? 0.18 + phase * 0.32 : 0.50 - (phase - 0.5) * 0.32;
-              return Positioned(
-                left: 6 + index * 11,
-                top: 6,
-                child: Container(
-                  width: 4,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: _mutedColor(context).withValues(alpha: opacity),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              );
-            }),
         ],
+      ),
+    );
+  }
+}
+
+class _StatusDot extends StatelessWidget {
+  const _StatusDot({
+    required this.color,
+    required this.progress,
+  });
+
+  final Color color;
+  final double progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final wave = progress < 0.5 ? progress * 2 : (1 - progress) * 2;
+    return Transform.translate(
+      offset: Offset(0, -2.4 * wave),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 90),
+        curve: Curves.easeOutCubic,
+        width: 4.5 + wave * 1.5,
+        height: 4.5 + wave * 1.5,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: color.withValues(alpha: 0.30 + wave * 0.34),
+        ),
       ),
     );
   }
@@ -1209,7 +1241,7 @@ class Composer extends StatefulWidget {
   final bool isSending;
   final VoidCallback onSend;
   final VoidCallback onStop;
-  final VoidCallback onOpenMenu;
+  final ValueChanged<Offset> onOpenMenu;
 
   @override
   State<Composer> createState() => _ComposerState();
@@ -1261,7 +1293,18 @@ class _ComposerState extends State<Composer> {
           });
         },
         child: Container(
-          color: Colors.transparent,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                _background(context).withValues(alpha: 0),
+                _background(context).withValues(alpha: 0.72),
+                _background(context),
+              ],
+              stops: const [0, 0.48, 1],
+            ),
+          ),
           padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 190),
@@ -1282,15 +1325,28 @@ class _ComposerState extends State<Composer> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                IconButton(
-                  tooltip: '添加',
-                  visualDensity: VisualDensity.compact,
-                  icon: Icon(
-                    Icons.add_rounded,
-                    color: _mutedColor(context),
-                    size: 24,
-                  ),
-                  onPressed: widget.onOpenMenu,
+                Builder(
+                  builder: (buttonContext) {
+                    return IconButton(
+                      tooltip: '添加',
+                      visualDensity: VisualDensity.compact,
+                      icon: Icon(
+                        Icons.add_rounded,
+                        color: _mutedColor(context),
+                        size: 24,
+                      ),
+                      onPressed: () {
+                        final render =
+                            buttonContext.findRenderObject() as RenderBox?;
+                        final anchor = render == null
+                            ? Offset.zero
+                            : render.localToGlobal(
+                                render.size.center(Offset.zero),
+                              );
+                        widget.onOpenMenu(anchor);
+                      },
+                    );
+                  },
                 ),
                 Expanded(
                   child: Padding(
@@ -1456,7 +1512,7 @@ class _ChaitDrawerState extends State<ChaitDrawer> {
                 Expanded(
                   child: _FloatingPillButton(
                     label: widget.store.currentAssistant.name,
-                    icon: Icons.person_outline_rounded,
+                    icon: Icons.extension_outlined,
                     onTap: _showAssistantChooser,
                   ),
                 ),
@@ -1467,8 +1523,8 @@ class _ChaitDrawerState extends State<ChaitDrawer> {
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => SettingsScreen(store: widget.store),
+                      chaitPageRoute(
+                        SettingsScreen(store: widget.store),
                       ),
                     );
                   },
@@ -1499,7 +1555,7 @@ class _ChaitDrawerState extends State<ChaitDrawer> {
         color: _mutedColor(context),
         size: 19,
       ),
-      onLongPress: () => _showSessionActions(session),
+      onLongPressStart: (anchor) => _showSessionActions(session, anchor),
       onTap: () {
         Navigator.pop(context);
         widget.store.selectSession(session.id);
@@ -1507,9 +1563,10 @@ class _ChaitDrawerState extends State<ChaitDrawer> {
     );
   }
 
-  Future<void> _showSessionActions(ChatSession session) async {
-    final action = await _showScaleMenu(
+  Future<void> _showSessionActions(ChatSession session, Offset anchor) async {
+    final action = await _showContextMenu(
       context,
+      anchor: anchor,
       children: [
         _MenuAction(
           icon: session.pinned ? Icons.push_pin_outlined : Icons.push_pin_rounded,
@@ -1590,13 +1647,14 @@ class _ChaitDrawerState extends State<ChaitDrawer> {
     return result ?? false;
   }
 
-  Future<void> _showAssistantChooser() async {
-    final selected = await _showScaleMenu(
+  Future<void> _showAssistantChooser(Offset anchor) async {
+    final selected = await _showContextMenu(
       context,
+      anchor: anchor,
       children: widget.store.assistants
           .map(
             (assistant) => _MenuAction(
-              icon: Icons.person_outline_rounded,
+              icon: Icons.extension_outlined,
               label: assistant.name,
               subtitle: assistant.description,
               value: assistant.id,
@@ -1691,14 +1749,14 @@ class _DrawerRow extends StatelessWidget {
     required this.title,
     this.leading,
     this.selected = false,
-    this.onLongPress,
+    this.onLongPressStart,
     required this.onTap,
   });
 
   final String title;
   final Widget? leading;
   final bool selected;
-  final VoidCallback? onLongPress;
+  final ValueChanged<Offset>? onLongPressStart;
   final VoidCallback onTap;
 
   @override
@@ -1711,7 +1769,15 @@ class _DrawerRow extends StatelessWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(14),
           onTap: onTap,
-          onLongPress: onLongPress,
+          onLongPress: onLongPressStart == null
+              ? null
+              : () {
+                  final render = context.findRenderObject() as RenderBox?;
+                  final anchor = render == null
+                      ? Offset.zero
+                      : render.localToGlobal(render.size.center(Offset.zero));
+                  onLongPressStart!(anchor);
+                },
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
             child: Row(
@@ -1755,7 +1821,7 @@ class _FloatingPillButton extends StatelessWidget {
 
   final String label;
   final IconData icon;
-  final VoidCallback onTap;
+  final ValueChanged<Offset> onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1776,7 +1842,13 @@ class _FloatingPillButton extends StatelessWidget {
         borderRadius: BorderRadius.circular(23),
         child: InkWell(
           borderRadius: BorderRadius.circular(23),
-          onTap: onTap,
+          onTap: () {
+            final render = context.findRenderObject() as RenderBox?;
+            final anchor = render == null
+                ? Offset.zero
+                : render.localToGlobal(render.size.center(Offset.zero));
+            onTap(anchor);
+          },
           child: SizedBox(
             height: 46,
             child: Row(
@@ -1867,8 +1939,9 @@ class _MenuAction extends StatelessWidget {
   }
 }
 
-Future<String?> _showScaleMenu(
+Future<String?> _showContextMenu(
   BuildContext context, {
+  required Offset anchor,
   required List<_MenuAction> children,
 }) {
   return showGeneralDialog<String>(
@@ -1878,39 +1951,99 @@ Future<String?> _showScaleMenu(
     barrierColor: Colors.black.withValues(alpha: 0.08),
     transitionDuration: const Duration(milliseconds: 170),
     pageBuilder: (context, _, __) {
-      return Center(
-        child: Material(
-          color: Colors.transparent,
-          child: Container(
-            width: MediaQuery.sizeOf(context).width * 0.76,
-            constraints: const BoxConstraints(maxWidth: 360),
-            decoration: BoxDecoration(
-              color: _surface(context),
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: [
-                BoxShadow(
-                  color: _shadowColor(context, 0.14),
-                  blurRadius: 34,
-                  spreadRadius: 1,
+      final size = MediaQuery.sizeOf(context);
+      final padding = MediaQuery.paddingOf(context);
+      final width = (size.width * 0.64).clamp(216.0, 320.0).toDouble();
+      final estimatedHeight = (children.length * 56.0).clamp(56.0, 360.0);
+      final left = anchor.dx.clamp(10.0, size.width - width - 10).toDouble();
+      final top = anchor.dy.clamp(
+        padding.top + 8,
+        size.height - estimatedHeight - padding.bottom - 10,
+      ).toDouble();
+      return Stack(
+        children: [
+          Positioned(
+            left: left,
+            top: top,
+            width: width,
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                constraints: BoxConstraints(
+                  maxHeight: size.height * 0.62,
                 ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: children,
+                decoration: BoxDecoration(
+                  color: _surface(context),
+                  borderRadius: BorderRadius.circular(18),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _shadowColor(context, 0.14),
+                      blurRadius: 30,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: EdgeInsets.zero,
+                  children: children,
+                ),
+              ),
             ),
           ),
-        ),
+        ],
       );
     },
     transitionBuilder: (context, animation, _, child) {
-      final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutBack);
+      final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
       return FadeTransition(
         opacity: animation,
-        child: ScaleTransition(scale: curved, child: child),
+        child: ScaleTransition(
+          scale: Tween<double>(begin: 0.96, end: 1).animate(curved),
+          alignment: Alignment.topLeft,
+          child: child,
+        ),
       );
     },
   );
+}
+
+class _SheetSearchField extends StatelessWidget {
+  const _SheetSearchField({required this.onChanged});
+
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      onChanged: onChanged,
+      cursorColor: _textColor(context),
+      decoration: InputDecoration(
+        hintText: '搜索已添加模型',
+        hintStyle: TextStyle(color: _mutedColor(context), fontSize: 13.5),
+        prefixIcon: Icon(
+          Icons.search_rounded,
+          color: _mutedColor(context),
+          size: 19,
+        ),
+        filled: true,
+        fillColor: _softColor(context),
+        isDense: true,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: BorderSide.none,
+        ),
+      ),
+      style: TextStyle(
+        color: _textColor(context),
+        fontSize: 14,
+        height: 1.25,
+      ),
+    );
+  }
 }
 
 Future<void> showModelChoiceSheet({
@@ -1925,77 +2058,104 @@ Future<void> showModelChoiceSheet({
     context: context,
     backgroundColor: Colors.transparent,
     builder: (context) {
-      return TweenAnimationBuilder<double>(
-        tween: Tween(begin: 0.94, end: 1),
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOutCubic,
-        builder: (context, scale, child) {
-          return Transform.scale(scale: scale, alignment: Alignment.bottomCenter, child: child);
-        },
-        child: Container(
-          margin: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: _surface(context),
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-                BoxShadow(
-                  color: _shadowColor(context, 0.12),
-                  blurRadius: 30,
-                  spreadRadius: 1,
-                ),
-            ],
-          ),
-          child: SafeArea(
-            child: ListView(
-              shrinkWrap: true,
-              padding: const EdgeInsets.only(bottom: 10),
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 14, 18, 6),
-                  child: Text(
-                    title,
-                    style: TextStyle(
-                      color: _textColor(context),
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
+      var query = '';
+      return StatefulBuilder(
+        builder: (context, setSheetState) {
+          final normalized = query.trim().toLowerCase();
+          final filtered = models.where((model) {
+            if (normalized.isEmpty) {
+              return true;
+            }
+            return model.name.toLowerCase().contains(normalized) ||
+                model.displayName.toLowerCase().contains(normalized) ||
+                model.providerName.toLowerCase().contains(normalized);
+          }).toList();
+          return TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0.96, end: 1),
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            builder: (context, scale, child) {
+              return Transform.scale(
+                scale: scale,
+                alignment: Alignment.bottomCenter,
+                child: child,
+              );
+            },
+            child: Container(
+              margin: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: _surface(context),
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: _shadowColor(context, 0.12),
+                    blurRadius: 30,
+                    spreadRadius: 1,
                   ),
-                ),
-                ListTile(
-                  title: Text(emptyLabel),
-                  trailing: value.isEmpty ? const Icon(Icons.check_rounded) : null,
-                  onTap: () => Navigator.pop(context, ''),
-                ),
-                if (models.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.all(18),
-                    child: Text(
-                      '暂无可选模型',
-                      style: TextStyle(color: _mutedColor(context)),
+                ],
+              ),
+              child: SafeArea(
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.fromLTRB(0, 10, 0, 10),
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 4, 18, 6),
+                      child: Text(
+                        title,
+                        style: TextStyle(
+                          color: _textColor(context),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
-                  ),
-                ...models.map(
-                  (model) => ListTile(
-                    title: Text(
-                      model.displayName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+                      child: _SheetSearchField(
+                        onChanged: (value) =>
+                            setSheetState(() => query = value),
+                      ),
                     ),
-                    subtitle: Text(
-                      model.providerName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: _mutedColor(context)),
+                    ListTile(
+                      title: Text(emptyLabel),
+                      trailing:
+                          value.isEmpty ? const Icon(Icons.check_rounded) : null,
+                      onTap: () => Navigator.pop(context, ''),
                     ),
-                    trailing:
-                        value == model.id ? const Icon(Icons.check_rounded) : null,
-                    onTap: () => Navigator.pop(context, model.id),
-                  ),
+                    if (filtered.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.all(18),
+                        child: Text(
+                          models.isEmpty ? '暂无可选模型' : '没有匹配模型',
+                          style: TextStyle(color: _mutedColor(context)),
+                        ),
+                      ),
+                    ...filtered.map(
+                      (model) => ListTile(
+                        title: Text(
+                          model.displayName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(
+                          model.providerName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: _mutedColor(context)),
+                        ),
+                        trailing: value == model.id
+                            ? const Icon(Icons.check_rounded)
+                            : null,
+                        onTap: () => Navigator.pop(context, model.id),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
-          ),
-        ),
+          );
+        },
       );
     },
   );

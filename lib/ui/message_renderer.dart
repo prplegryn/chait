@@ -38,7 +38,7 @@ class MessageRenderer extends StatelessWidget {
       children: [
         for (var index = 0; index < blocks.length; index += 1)
           _RevealBlock(
-            enabled: animate,
+            enabled: animate && blocks[index].kind != _MessageBlockKind.markdown,
             token: '${index}_${blocks[index].kind}',
             child: Padding(
               padding: EdgeInsets.only(
@@ -200,7 +200,7 @@ class _MarkdownText extends StatelessWidget {
       },
       styleSheet: MarkdownStyleSheet(
         p: bodyStyle,
-        pPadding: const EdgeInsets.only(bottom: 7),
+        pPadding: EdgeInsets.only(bottom: isUser ? 0 : 7),
         a: bodyStyle.copyWith(
           color: Theme.of(context).colorScheme.primary,
           decoration: TextDecoration.underline,

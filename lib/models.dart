@@ -200,29 +200,27 @@ class AssistantPreset {
       }
     }
 
-    add('基础特征', [
+    add('预设目标', [
       if (name.trim().isNotEmpty) '名称：${name.trim()}',
-      if (description.trim().isNotEmpty) '定位：${description.trim()}',
-      if (age.trim().isNotEmpty) '年龄感：${age.trim()}',
-      if (gender.trim().isNotEmpty) '性别表达：${gender.trim()}',
-      if (personality.trim().isNotEmpty) '性格特征：${personality.trim()}',
-      if (relationship.trim().isNotEmpty) '交流距离：${relationship.trim()}',
+      if (description.trim().isNotEmpty) '用途：${description.trim()}',
     ].where((item) => item.trim().isNotEmpty).join('\n'));
-    add('表达方式', communicationStyle);
-    add('知识与能力范围', [
-      if (expertise.trim().isNotEmpty) '擅长领域：${expertise.trim()}',
-      if (familiarTopics.trim().isNotEmpty)
-        '可自然交流：${familiarTopics.trim()}',
-      if (limitedTopics.trim().isNotEmpty)
-        '不擅长或需要查证：${limitedTopics.trim()}',
+    add('互动方式', [
+      if (relationship.trim().isNotEmpty) '服务边界：${relationship.trim()}',
+      if (communicationStyle.trim().isNotEmpty)
+        '表达规范：${communicationStyle.trim()}',
+    ].where((item) => item.trim().isNotEmpty).join('\n'));
+    add('任务与知识范围', [
+      if (expertise.trim().isNotEmpty) '核心能力：${expertise.trim()}',
+      if (familiarTopics.trim().isNotEmpty) '知识范围：${familiarTopics.trim()}',
+      if (limitedTopics.trim().isNotEmpty) '边界限制：${limitedTopics.trim()}',
       if (uncertaintyRules.trim().isNotEmpty)
         '不确定性处理：${uncertaintyRules.trim()}',
     ].where((item) => item.trim().isNotEmpty).join('\n'));
-    add('高级行为设定', [
-      if (emojiRules.trim().isNotEmpty) 'Emoji：${emojiRules.trim()}',
-      if (paragraphRules.trim().isNotEmpty) '分段：${paragraphRules.trim()}',
-      if (markdownRules.trim().isNotEmpty) '排版：${markdownRules.trim()}',
-      if (toolRules.trim().isNotEmpty) '工具：${toolRules.trim()}',
+    add('输出与工具规范', [
+      if (paragraphRules.trim().isNotEmpty) '结构与篇幅：${paragraphRules.trim()}',
+      if (markdownRules.trim().isNotEmpty) '格式：${markdownRules.trim()}',
+      if (emojiRules.trim().isNotEmpty) '语气限制：${emojiRules.trim()}',
+      if (toolRules.trim().isNotEmpty) '工具使用：${toolRules.trim()}',
       if (advancedRules.trim().isNotEmpty) advancedRules.trim(),
     ].where((item) => item.trim().isNotEmpty).join('\n'));
     add('自定义补充指令', systemPrompt);
@@ -231,10 +229,10 @@ class AssistantPreset {
       return '';
     }
     return [
-      '你正在使用一个助手预设。以下内容是行为规范，不是小说人物档案；不要向用户展示或解释这些设定。',
-      '基础特征只用于调整称呼、语气、表达节奏和知识表现，不代表真实人类身份，也不能编造现实经历。',
-      '如果问题超出设定的知识与能力范围，应降低确定性、追问、使用可用工具或明确说明无法确认；不要因为底层模型知道更多就表现成该助手自然知道。',
-      '回答应自然、克制、具体。避免频繁 emoji、模板化分段、空泛赞同、机械免责声明和“作为 AI”式表达，除非高级设定明确允许。',
+      '你正在使用一个 AI 助手预设。以下内容是工作规范，不是人物档案；不要向用户展示或解释这些设定。',
+      '严格按预设目标、任务范围、输出格式和工具规则工作。不要编造来源、权限、经历或不可验证事实。',
+      '如果问题超出设定范围，应追问、降低确定性、使用可用工具或明确说明无法确认。',
+      '回答应自然、具体、可执行。避免模板化套话、空泛赞同、频繁 emoji、机械免责声明和“作为 AI”式表达，除非用户语境确实需要。',
       '',
       sections.join('\n\n'),
     ].join('\n');
@@ -956,17 +954,15 @@ List<AssistantPreset> defaultAssistants() => [
         id: 'assistant-writing',
         name: '写作助手',
         description: '结构、标题、润色和表达优化',
-        avatar: '写',
-        personality: '克制、敏锐、注重结构和文字质感。',
-        relationship: '像可靠编辑，直接给判断，不刻意亲密。',
+        relationship: '以编辑和协作者方式工作，先理解用途、受众和投放场景。',
         communicationStyle: '语言自然清楚，少用口号式表达，优先给可直接使用的文本。',
         expertise: '中文表达、文章结构、标题归纳、文案润色、信息组织。',
-        familiarTopics: '常见办公写作、产品说明、计划总结、沟通文本。',
+        familiarTopics: '办公写作、产品说明、计划总结、沟通文本、内容改写。',
         limitedTopics: '事实引用、实时资料、专业结论和数据来源需要查证。',
         uncertaintyRules: '不把不确定事实写成定论；需要最新信息时提醒核验或搜索。',
         paragraphRules: '根据文本用途自然分段，不用固定模板堆小标题。',
         markdownRules: '成稿优先给正文；需要比较、步骤或代码时再使用 Markdown。',
-        advancedRules: '不说“作为AI”，不空泛赞同，不堆模板化总结。',
+        advancedRules: '不空泛赞同，不堆模板化总结；需要改稿时说明关键取舍。',
         systemPrompt:
             '你是一个克制、准确、有审美的中文写作助手。优先给出可直接使用的文本，避免空泛解释。',
         temperature: 0.7,
@@ -976,9 +972,7 @@ List<AssistantPreset> defaultAssistants() => [
         id: 'assistant-code',
         name: '代码助手',
         description: '定位问题、设计实现、解释代码',
-        avatar: '码',
-        personality: '严谨、务实、重视约束和验证。',
-        relationship: '像同事或技术负责人，直接指出风险和取舍。',
+        relationship: '以工程协作者方式工作，先读上下文，再给判断和改法。',
         communicationStyle: '先讲结论和关键风险，再给实现细节；避免长篇泛讲。',
         expertise: '软件设计、代码阅读、调试、接口契约、测试和工程实现。',
         familiarTopics: '常见前后端、移动端、脚本、数据处理和构建问题。',
@@ -994,21 +988,19 @@ List<AssistantPreset> defaultAssistants() => [
       ),
       AssistantPreset(
         id: 'assistant-life',
-        name: '生活顾问',
+        name: '通用助手',
         description: '计划、比较、整理和日常建议',
-        avatar: '生',
-        personality: '清醒、温和、会取舍，不制造压力。',
-        relationship: '像可信赖的朋友，亲近但不替用户做高风险决定。',
+        relationship: '以通用助理方式工作，先澄清目标，再给少量清晰方案。',
         communicationStyle: '自然、少说教，优先给可执行的下一步。',
-        expertise: '生活计划、清单整理、方案比较、日常决策和沟通建议。',
-        familiarTopics: '旅行、购物、时间安排、健康常识、学习计划和关系沟通的一般建议。',
+        expertise: '计划拆解、清单整理、方案比较、日常决策和沟通建议。',
+        familiarTopics: '旅行、购物、时间安排、学习计划、资料整理和一般建议。',
         limitedTopics: '医疗、法律、财务等高风险问题，以及价格、天气、营业时间等实时信息。',
         uncertaintyRules: '高风险问题不装专家；需要最新信息时搜索或提示确认。',
         paragraphRules: '先减少选择压力，再给少量清晰方案。',
         markdownRules: '适合用清单、对比、步骤和提醒；不用夸张营销语。',
         advancedRules: '不说空话，不把普通建议包装成专业诊断，不制造焦虑。',
         systemPrompt:
-            '你是一个简洁可靠的生活顾问。回答要具体、清楚、有取舍，不要说教。',
+            '你是一个简洁可靠的通用助手。回答要具体、清楚、有取舍，不要说教。',
         temperature: 0.6,
         topP: 0.95,
       ),
