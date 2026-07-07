@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../app_store.dart';
 import '../models.dart';
+import 'chait_toast.dart';
 import 'message_renderer.dart';
 
 const _soft = Color(0xFFF7F7F7);
@@ -33,22 +34,28 @@ Color _shadowColor(BuildContext context, [double alpha = 0.08]) =>
 Route<T> chaitPageRoute<T>(Widget page) {
   return PageRouteBuilder<T>(
     pageBuilder: (_, __, ___) => page,
-    transitionDuration: const Duration(milliseconds: 220),
-    reverseTransitionDuration: const Duration(milliseconds: 180),
+    transitionDuration: const Duration(milliseconds: 260),
+    reverseTransitionDuration: const Duration(milliseconds: 190),
     transitionsBuilder: (context, animation, _, child) {
       final curved = CurvedAnimation(
         parent: animation,
-        curve: Curves.easeOutCubic,
-        reverseCurve: Curves.easeInCubic,
+        curve: const Cubic(0.2, 0, 0, 1),
+        reverseCurve: const Cubic(0.4, 0, 1, 1),
       );
       return ColoredBox(
         color: _background(context),
-        child: SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0.025, 0),
-            end: Offset.zero,
-          ).animate(curved),
-          child: child,
+        child: FadeTransition(
+          opacity: Tween<double>(begin: 0.96, end: 1).animate(curved),
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0.035, 0),
+              end: Offset.zero,
+            ).animate(curved),
+            child: ScaleTransition(
+              scale: Tween<double>(begin: 0.992, end: 1).animate(curved),
+              child: child,
+            ),
+          ),
         ),
       );
     },
@@ -3035,7 +3042,7 @@ Future<String?> _showChoiceMenu(
     barrierDismissible: true,
     barrierLabel: '关闭',
     barrierColor: Colors.black.withValues(alpha: 0.08),
-    transitionDuration: const Duration(milliseconds: 170),
+    transitionDuration: const Duration(milliseconds: 190),
     pageBuilder: (context, _, __) {
       final size = MediaQuery.sizeOf(context);
       final padding = MediaQuery.paddingOf(context);
@@ -3055,14 +3062,22 @@ Future<String?> _showChoiceMenu(
             child: Material(
               color: Colors.transparent,
               child: TweenAnimationBuilder<double>(
-                tween: Tween(begin: 0.94, end: 1),
-                duration: const Duration(milliseconds: 170),
-                curve: Curves.easeOutCubic,
-                builder: (context, scale, child) {
-                  return Transform.scale(
-                    scale: scale,
-                    alignment: placement.alignment,
-                    child: child,
+                tween: Tween<double>(begin: 0, end: 1),
+                duration: const Duration(milliseconds: 190),
+                curve: const Cubic(0.2, 0, 0, 1),
+                builder: (context, value, child) {
+                  final dy = (1 - value) *
+                      (placement.alignment.y > 0 ? 8.0 : -8.0);
+                  return Opacity(
+                    opacity: value,
+                    child: Transform.translate(
+                      offset: Offset(0, dy),
+                      child: Transform.scale(
+                        scale: 0.965 + value * 0.035,
+                        alignment: placement.alignment,
+                        child: child,
+                      ),
+                    ),
                   );
                 },
                 child: Container(
@@ -3092,7 +3107,12 @@ Future<String?> _showChoiceMenu(
       );
     },
     transitionBuilder: (context, animation, _, child) {
-      return FadeTransition(opacity: animation, child: child);
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: const Cubic(0.2, 0, 0, 1),
+        reverseCurve: const Cubic(0.4, 0, 1, 1),
+      );
+      return FadeTransition(opacity: curved, child: child);
     },
   );
 }
@@ -3812,68 +3832,87 @@ class _ModelPickerTile extends StatelessWidget {
                   model.providerName.toLowerCase().contains(normalized) ||
                   _modelMeta(model).toLowerCase().contains(normalized);
             }).toList();
-            return Container(
-              margin: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: _surface(context),
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: [
-                  BoxShadow(
-                    color: _shadowColor(context, 0.12),
-                    blurRadius: 30,
-                    spreadRadius: 1,
-                  ),
-                ],
-              ),
-              child: SafeArea(
-                top: false,
-                child: ListView(
-                  shrinkWrap: true,
-                  padding: const EdgeInsets.fromLTRB(0, 12, 0, 10),
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
-                      child: _FloatingSearchField(
-                        hint: '搜索已添加模型',
-                        onChanged: (value) =>
-                            setSheetState(() => query = value),
-                      ),
+            return TweenAnimationBuilder<double>(
+              tween: Tween<double>(begin: 0, end: 1),
+              duration: const Duration(milliseconds: 220),
+              curve: const Cubic(0.2, 0, 0, 1),
+              builder: (context, value, child) {
+                return Opacity(
+                  opacity: value,
+                  child: Transform.translate(
+                    offset: Offset(0, (1 - value) * 18),
+                    child: Transform.scale(
+                      scale: 0.985 + value * 0.015,
+                      alignment: Alignment.bottomCenter,
+                      child: child,
                     ),
-                    if (allowEmpty)
-                      ListTile(
-                        title: Text(emptyLabel),
-                        trailing:
-                            value.isEmpty ? const Icon(Icons.check_rounded) : null,
-                        onTap: () => Navigator.pop(context, ''),
-                      ),
-                    if (filtered.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.all(18),
-                        child: Text(
-                          models.isEmpty ? '暂无可选模型' : '没有匹配模型',
-                          style: TextStyle(color: _mutedColor(context)),
-                        ),
-                      ),
-                    ...filtered.map(
-                      (model) => ListTile(
-                        title: Text(
-                          model.displayName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: Text(
-                          '${model.providerName} · ${_modelMeta(model)}',
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: _mutedColor(context)),
-                        ),
-                        trailing: value == model.id
-                            ? const Icon(Icons.check_rounded)
-                            : null,
-                        onTap: () => Navigator.pop(context, model.id),
-                      ),
+                  ),
+                );
+              },
+              child: Container(
+                margin: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: _surface(context),
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _shadowColor(context, 0.12),
+                      blurRadius: 30,
+                      spreadRadius: 1,
                     ),
                   ],
+                ),
+                child: SafeArea(
+                  top: false,
+                  child: ListView(
+                    shrinkWrap: true,
+                    padding: const EdgeInsets.fromLTRB(0, 12, 0, 10),
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+                        child: _FloatingSearchField(
+                          hint: '搜索已添加模型',
+                          onChanged: (value) =>
+                              setSheetState(() => query = value),
+                        ),
+                      ),
+                      if (allowEmpty)
+                        ListTile(
+                          title: Text(emptyLabel),
+                          trailing: value.isEmpty
+                              ? const Icon(Icons.check_rounded)
+                              : null,
+                          onTap: () => Navigator.pop(context, ''),
+                        ),
+                      if (filtered.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.all(18),
+                          child: Text(
+                            models.isEmpty ? '暂无可选模型' : '没有匹配模型',
+                            style: TextStyle(color: _mutedColor(context)),
+                          ),
+                        ),
+                      ...filtered.map(
+                        (model) => ListTile(
+                          title: Text(
+                            model.displayName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          subtitle: Text(
+                            '${model.providerName} · ${_modelMeta(model)}',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: _mutedColor(context)),
+                          ),
+                          trailing: value == model.id
+                              ? const Icon(Icons.check_rounded)
+                              : null,
+                          onTap: () => Navigator.pop(context, model.id),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             );
@@ -4117,5 +4156,5 @@ int _intOr(String source, int fallback) {
 }
 
 void _snack(BuildContext context, String message) {
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  showChaitToast(context, message);
 }

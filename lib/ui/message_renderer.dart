@@ -8,6 +8,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:markdown/markdown.dart' as md;
 
 import '../models.dart';
+import 'chait_toast.dart';
 
 class CodeThemeOption {
   const CodeThemeOption({
@@ -342,7 +343,7 @@ class _RevealBlock extends StatelessWidget {
     }
     return TweenAnimationBuilder<double>(
       key: ValueKey(token),
-      tween: Tween(begin: 0, end: 1),
+      tween: Tween<double>(begin: 0, end: 1),
       duration: const Duration(milliseconds: 260),
       curve: Curves.easeOutCubic,
       builder: (context, value, child) {
@@ -716,9 +717,7 @@ class _CodeBlockState extends State<_CodeBlock> {
                 if (!context.mounted) {
                   return;
                 }
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('已复制')),
-                );
+                showChaitToast(context, '已复制');
               },
             ),
             AnimatedCrossFade(
@@ -962,35 +961,10 @@ class _CodeTextBody extends StatelessWidget {
           child: codePane,
         );
         if (collapsed) {
+          final content = body;
           body = SizedBox(
             height: 320,
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: SingleChildScrollView(child: body),
-                ),
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  height: 28,
-                  child: IgnorePointer(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Colors.transparent,
-                            backgroundColor.withValues(alpha: 0.96),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            child: SingleChildScrollView(child: content),
           );
         }
         return body;

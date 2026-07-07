@@ -123,11 +123,6 @@ ThemeData _buildTheme({
       thickness: 1,
       space: 1,
     ),
-    snackBarTheme: SnackBarThemeData(
-      behavior: SnackBarBehavior.floating,
-      backgroundColor: dark ? const Color(0xFF242424) : const Color(0xFF111111),
-      contentTextStyle: const TextStyle(color: Colors.white),
-    ),
     textSelectionTheme: const TextSelectionThemeData(
       cursorColor: Color(0xFF2563EB),
       selectionColor: Color(0x663B82F6),

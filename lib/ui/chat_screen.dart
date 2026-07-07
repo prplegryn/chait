@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../app_logger.dart';
 import '../app_store.dart';
 import '../models.dart';
+import 'chait_toast.dart';
 import 'message_renderer.dart';
 import 'settings_screen.dart';
 
@@ -196,11 +197,15 @@ class _ChatScreenState extends State<ChatScreen> {
     _inputController.clear();
     _forceNextScroll = true;
     _stickToBottom = true;
-    _focusNode.requestFocus();
+    _focusNode.unfocus();
+    FocusManager.instance.primaryFocus?.unfocus();
+    await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
     await widget.store.sendMessage(text);
   }
 
   void _openCurrentSessionModel() {
+    _focusNode.unfocus();
+    FocusManager.instance.primaryFocus?.unfocus();
     showModelChoiceSheet(
       context: context,
       title: '当前会话模型',
@@ -220,6 +225,8 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _openComposerMenu(Offset anchor) async {
+    _focusNode.unfocus();
+    FocusManager.instance.primaryFocus?.unfocus();
     final searchEnabled =
         widget.store.isSearchEnabledForSession(widget.store.currentSession);
     final selected = await _showContextMenu(
@@ -247,9 +254,7 @@ class _ChatScreenState extends State<ChatScreen> {
       _openCurrentSessionModel();
     } else if (selected == 'search') {
       if (!searchEnabled && !_searchReady()) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('请先配置搜索服务')),
-        );
+        showChaitToast(context, '请先配置搜索服务');
         return;
       }
       widget.store.setSessionSearchEnabled(!searchEnabled);
@@ -258,9 +263,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _copyMessageText(String text) {
     Clipboard.setData(ClipboardData(text: text));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已复制')),
-    );
+    showChaitToast(context, '已复制');
   }
 
   void _editUserMessage(String text) {
@@ -907,9 +910,7 @@ class MessageBubble extends StatelessWidget {
                     icon: Icons.copy_rounded,
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: message.content));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('已复制')),
-                      );
+                      showChaitToast(context, '已复制');
                     },
                   ),
                   _TinyAction(
@@ -1031,22 +1032,28 @@ void _openMessageReader(
       transitionsBuilder: (_, animation, __, child) {
         final curved = CurvedAnimation(
           parent: animation,
-          curve: Curves.easeOutCubic,
-          reverseCurve: Curves.easeInCubic,
+          curve: const Cubic(0.2, 0, 0, 1),
+          reverseCurve: const Cubic(0.4, 0, 1, 1),
         );
         return ColoredBox(
           color: _background(context),
-          child: SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(0.025, 0),
-              end: Offset.zero,
-            ).animate(curved),
-            child: child,
+          child: FadeTransition(
+            opacity: Tween<double>(begin: 0.96, end: 1).animate(curved),
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0.035, 0),
+                end: Offset.zero,
+              ).animate(curved),
+              child: ScaleTransition(
+                scale: Tween<double>(begin: 0.992, end: 1).animate(curved),
+                child: child,
+              ),
+            ),
           ),
         );
       },
-      transitionDuration: const Duration(milliseconds: 190),
-      reverseTransitionDuration: const Duration(milliseconds: 120),
+      transitionDuration: const Duration(milliseconds: 250),
+      reverseTransitionDuration: const Duration(milliseconds: 180),
     ),
   );
 }
@@ -2099,7 +2106,7 @@ Future<String?> _showContextMenu(
     barrierDismissible: true,
     barrierLabel: '关闭',
     barrierColor: Colors.black.withValues(alpha: 0.08),
-    transitionDuration: const Duration(milliseconds: 170),
+    transitionDuration: const Duration(milliseconds: 190),
     pageBuilder: (context, _, __) {
       final size = MediaQuery.sizeOf(context);
       final padding = MediaQuery.paddingOf(context);
@@ -2119,14 +2126,22 @@ Future<String?> _showContextMenu(
             child: Material(
               color: Colors.transparent,
               child: TweenAnimationBuilder<double>(
-                tween: Tween(begin: 0.94, end: 1),
-                duration: const Duration(milliseconds: 170),
-                curve: Curves.easeOutCubic,
-                builder: (context, scale, child) {
-                  return Transform.scale(
-                    scale: scale,
-                    alignment: placement.alignment,
-                    child: child,
+                tween: Tween<double>(begin: 0, end: 1),
+                duration: const Duration(milliseconds: 190),
+                curve: const Cubic(0.2, 0, 0, 1),
+                builder: (context, value, child) {
+                  final dy = (1 - value) *
+                      (placement.alignment.y > 0 ? 8.0 : -8.0);
+                  return Opacity(
+                    opacity: value,
+                    child: Transform.translate(
+                      offset: Offset(0, dy),
+                      child: Transform.scale(
+                        scale: 0.965 + value * 0.035,
+                        alignment: placement.alignment,
+                        child: child,
+                      ),
+                    ),
                   );
                 },
                 child: Container(
@@ -2158,7 +2173,12 @@ Future<String?> _showContextMenu(
       );
     },
     transitionBuilder: (context, animation, _, child) {
-      return FadeTransition(opacity: animation, child: child);
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: const Cubic(0.2, 0, 0, 1),
+        reverseCurve: const Cubic(0.4, 0, 1, 1),
+      );
+      return FadeTransition(opacity: curved, child: child);
     },
   );
 }
@@ -2281,14 +2301,20 @@ Future<void> showModelChoiceSheet({
                 model.providerName.toLowerCase().contains(normalized);
           }).toList();
           return TweenAnimationBuilder<double>(
-            tween: Tween(begin: 0.96, end: 1),
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOutCubic,
-            builder: (context, scale, child) {
-              return Transform.scale(
-                scale: scale,
-                alignment: Alignment.bottomCenter,
-                child: child,
+            tween: Tween<double>(begin: 0, end: 1),
+            duration: const Duration(milliseconds: 220),
+            curve: const Cubic(0.2, 0, 0, 1),
+            builder: (context, value, child) {
+              return Opacity(
+                opacity: value,
+                child: Transform.translate(
+                  offset: Offset(0, (1 - value) * 18),
+                  child: Transform.scale(
+                    scale: 0.985 + value * 0.015,
+                    alignment: Alignment.bottomCenter,
+                    child: child,
+                  ),
+                ),
               );
             },
             child: Container(
