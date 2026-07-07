@@ -340,6 +340,9 @@ class _ChatScreenState extends State<ChatScreen> {
                               return MessageBubble(
                                 key: ValueKey(session.messages[index].id),
                                 message: session.messages[index],
+                                codeThemeId: widget.store.settings.codeThemeId,
+                                codeBackgroundValue:
+                                    widget.store.settings.codeBackgroundValue,
                                 onRegenerate: widget.store.regenerateLastAnswer,
                                 onCopy: _copyMessageText,
                                 onEditUserMessage: _editUserMessage,
@@ -548,7 +551,7 @@ class _ImmersiveTopBar extends StatelessWidget {
                 height: 50,
                 child: Row(
                   children: [
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 14),
                     _RoundShadowButton(
                       tooltip: '打开侧边栏',
                       icon: Icons.menu_rounded,
@@ -577,7 +580,7 @@ class _ImmersiveTopBar extends StatelessWidget {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 14),
                   ],
                 ),
               ),
@@ -799,12 +802,16 @@ class MessageBubble extends StatelessWidget {
   const MessageBubble({
     super.key,
     required this.message,
+    required this.codeThemeId,
+    required this.codeBackgroundValue,
     required this.onRegenerate,
     required this.onCopy,
     required this.onEditUserMessage,
   });
 
   final ChatMessage message;
+  final String codeThemeId;
+  final int codeBackgroundValue;
   final VoidCallback onRegenerate;
   final ValueChanged<String> onCopy;
   final ValueChanged<String> onEditUserMessage;
@@ -844,7 +851,11 @@ class MessageBubble extends StatelessWidget {
                         );
                       },
                       child: _UserBubbleFrame(
-                        child: _MessageContent(message: message),
+                        child: _MessageContent(
+                          message: message,
+                          codeThemeId: codeThemeId,
+                          codeBackgroundValue: codeBackgroundValue,
+                        ),
                       ),
                     ),
                   ),
@@ -877,7 +888,11 @@ class MessageBubble extends StatelessWidget {
                             ),
                           );
                         },
-                        child: _MessageContent(message: message),
+                        child: _MessageContent(
+                          message: message,
+                          codeThemeId: codeThemeId,
+                          codeBackgroundValue: codeBackgroundValue,
+                        ),
                       ),
               ),
             ),
@@ -954,9 +969,21 @@ class MessageBubble extends StatelessWidget {
     if (action == 'copy') {
       onCopy(message.content);
     } else if (action == 'select') {
-      _openMessageReader(context, message.content, selectionIndex);
+      _openMessageReader(
+        context,
+        message.content,
+        selectionIndex,
+        codeThemeId: codeThemeId,
+        codeBackgroundValue: codeBackgroundValue,
+      );
     } else if (action == 'read') {
-      _openMessageReader(context, message.content, null);
+      _openMessageReader(
+        context,
+        message.content,
+        null,
+        codeThemeId: codeThemeId,
+        codeBackgroundValue: codeBackgroundValue,
+      );
     } else if (action == 'edit') {
       onEditUserMessage(message.content);
     } else if (action == 'regenerate') {
@@ -988,20 +1015,37 @@ class MessageBubble extends StatelessWidget {
 void _openMessageReader(
   BuildContext context,
   String content,
-  int? selectionIndex,
-) {
+  int? selectionIndex, {
+  required String codeThemeId,
+  required int codeBackgroundValue,
+}) {
   Navigator.of(context).push(
     PageRouteBuilder<void>(
       opaque: true,
-      pageBuilder: (_, animation, __) => _MessageReaderPage(
+      pageBuilder: (_, __, ___) => _MessageReaderPage(
         content: content,
         selectionIndex: selectionIndex,
+        codeThemeId: codeThemeId,
+        codeBackgroundValue: codeBackgroundValue,
       ),
-      transitionsBuilder: (_, animation, __, child) => FadeTransition(
-        opacity: CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
-        child: child,
-      ),
-      transitionDuration: const Duration(milliseconds: 160),
+      transitionsBuilder: (_, animation, __, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeInCubic,
+        );
+        return ColoredBox(
+          color: _background(context),
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0.025, 0),
+              end: Offset.zero,
+            ).animate(curved),
+            child: child,
+          ),
+        );
+      },
+      transitionDuration: const Duration(milliseconds: 190),
       reverseTransitionDuration: const Duration(milliseconds: 120),
     ),
   );
@@ -1011,10 +1055,14 @@ class _MessageReaderPage extends StatefulWidget {
   const _MessageReaderPage({
     required this.content,
     required this.selectionIndex,
+    required this.codeThemeId,
+    required this.codeBackgroundValue,
   });
 
   final String content;
   final int? selectionIndex;
+  final String codeThemeId;
+  final int codeBackgroundValue;
 
   @override
   State<_MessageReaderPage> createState() => _MessageReaderPageState();
@@ -1052,6 +1100,7 @@ class _MessageReaderPageState extends State<_MessageReaderPage> {
   Widget build(BuildContext context) {
     const selectionColor = Color(0x663B82F6);
     const cursorColor = Color(0xFF2563EB);
+    final selecting = widget.selectionIndex != null;
     return TextSelectionTheme(
       data: const TextSelectionThemeData(
         cursorColor: cursorColor,
@@ -1063,28 +1112,40 @@ class _MessageReaderPageState extends State<_MessageReaderPage> {
         body: SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 18, 20, 22),
-            child: TextField(
-              controller: controller,
-              focusNode: focusNode,
-              readOnly: true,
-              showCursor: widget.selectionIndex != null,
-              enableInteractiveSelection: true,
-              expands: true,
-              maxLines: null,
-              minLines: null,
-              cursorColor: cursorColor,
-              decoration: const InputDecoration(
-                border: InputBorder.none,
-                isCollapsed: true,
-              ),
-              style: TextStyle(
-                color: _textColor(context),
-                fontSize: 17,
-                height: 1.72,
-                letterSpacing: 0,
-                fontWeight: FontWeight.w400,
-              ),
-            ),
+            child: selecting
+                ? TextField(
+                    controller: controller,
+                    focusNode: focusNode,
+                    readOnly: true,
+                    showCursor: true,
+                    enableInteractiveSelection: true,
+                    expands: true,
+                    maxLines: null,
+                    minLines: null,
+                    cursorColor: cursorColor,
+                    decoration: const InputDecoration(
+                      border: InputBorder.none,
+                      isCollapsed: true,
+                    ),
+                    style: TextStyle(
+                      color: _textColor(context),
+                      fontSize: 17,
+                      height: 1.72,
+                      letterSpacing: 0,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  )
+                : SingleChildScrollView(
+                    child: MessageRenderer(
+                      content: widget.content,
+                      textColor: _textColor(context),
+                      mutedColor: _mutedColor(context),
+                      codeBackground: _softColor(context),
+                      isUser: false,
+                      codeThemeId: widget.codeThemeId,
+                      codeBackgroundValue: widget.codeBackgroundValue,
+                    ),
+                  ),
           ),
         ),
       ),
@@ -1158,9 +1219,15 @@ class _UserBubbleFrameState extends State<_UserBubbleFrame>
 }
 
 class _MessageContent extends StatelessWidget {
-  const _MessageContent({required this.message});
+  const _MessageContent({
+    required this.message,
+    required this.codeThemeId,
+    required this.codeBackgroundValue,
+  });
 
   final ChatMessage message;
+  final String codeThemeId;
+  final int codeBackgroundValue;
 
   @override
   Widget build(BuildContext context) {
@@ -1183,66 +1250,10 @@ class _MessageContent extends StatelessWidget {
           codeBackground: codeBackground,
           isUser: message.isUser,
           animate: message.isStreaming,
+          codeThemeId: codeThemeId,
+          codeBackgroundValue: codeBackgroundValue,
         ),
-        if (message.isStreaming && content.trim().isNotEmpty) ...[
-          const SizedBox(height: 8),
-          _StreamingTail(color: muted),
-        ],
       ],
-    );
-  }
-}
-
-class _StreamingTail extends StatefulWidget {
-  const _StreamingTail({required this.color});
-
-  final Color color;
-
-  @override
-  State<_StreamingTail> createState() => _StreamingTailState();
-}
-
-class _StreamingTailState extends State<_StreamingTail>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController controller;
-
-  @override
-  void initState() {
-    super.initState();
-    controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1800),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: controller,
-      builder: (context, _) {
-        final value = controller.value;
-        final alpha = value < 0.5 ? 0.18 + value * 0.38 : 0.56 - (value - 0.5) * 0.38;
-        return Container(
-          width: 26,
-          height: 3,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(999),
-            gradient: LinearGradient(
-              colors: [
-                widget.color.withValues(alpha: 0),
-                widget.color.withValues(alpha: alpha),
-                widget.color.withValues(alpha: 0),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 }
@@ -1306,24 +1317,32 @@ class _GenerationStatusTextState extends State<_GenerationStatusText>
       builder: (context, _) {
         final label = _statusLabel(widget.text);
         final value = controller.value;
-        final pulse = value < 0.5
-            ? 0.44 + value * 0.52
-            : 0.70 - (value - 0.5) * 0.52;
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 9),
-          child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 180),
-            switchInCurve: Curves.easeOutCubic,
-            switchOutCurve: Curves.easeOutCubic,
-            child: Text(
-              label,
-              key: ValueKey(label),
-              style: TextStyle(
-                color: _mutedColor(context).withValues(alpha: pulse),
-                fontSize: 13.5,
-                height: 1.45,
-                letterSpacing: 0,
-                fontWeight: FontWeight.w500,
+        final breath = Curves.easeInOutSine.transform(
+          value < 0.5 ? value * 2 : (1 - value) * 2,
+        );
+        final alpha = 0.42 + breath * 0.28;
+        return Align(
+          alignment: Alignment.centerLeft,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 9),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              child: Transform.translate(
+                key: ValueKey(label),
+                offset: Offset(0, (1 - breath) * 0.8),
+                child: Text(
+                  label,
+                  textAlign: TextAlign.left,
+                  style: TextStyle(
+                    color: _mutedColor(context).withValues(alpha: alpha),
+                    fontSize: 13.5,
+                    height: 1.45,
+                    letterSpacing: 0,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ),
             ),
           ),
@@ -1337,10 +1356,17 @@ class _GenerationStatusTextState extends State<_GenerationStatusText>
     if (text.isEmpty || text == '...') {
       return '思考中';
     }
+    if (text == '…') {
+      return '思考中';
+    }
     if (text.endsWith('...')) {
       return text.substring(0, text.length - 3).trim().isEmpty
           ? '思考中'
           : text.substring(0, text.length - 3).trim();
+    }
+    if (text.endsWith('…')) {
+      final trimmed = text.substring(0, text.length - 1).trim();
+      return trimmed.isEmpty ? '思考中' : trimmed;
     }
     return text;
   }
@@ -1770,7 +1796,6 @@ class _ChaitDrawerState extends State<ChaitDrawer> {
             (assistant) => _MenuAction(
               icon: Icons.extension_outlined,
               label: assistant.name,
-              subtitle: assistant.description,
               value: assistant.id,
             ),
           )
@@ -1960,7 +1985,7 @@ class _FloatingPillButton extends StatelessWidget {
             final render = context.findRenderObject() as RenderBox?;
             final anchor = render == null
                 ? Offset.zero
-                : render.localToGlobal(render.size.center(Offset.zero));
+                : render.localToGlobal(Offset.zero);
             onTap(anchor);
           },
           child: SizedBox(

@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../app_store.dart';
 import '../models.dart';
+import 'message_renderer.dart';
 
 const _soft = Color(0xFFF7F7F7);
 
@@ -31,17 +32,17 @@ Color _shadowColor(BuildContext context, [double alpha = 0.08]) =>
 
 Route<T> chaitPageRoute<T>(Widget page) {
   return PageRouteBuilder<T>(
-    pageBuilder: (context, animation, secondaryAnimation) => page,
+    pageBuilder: (_, __, ___) => page,
     transitionDuration: const Duration(milliseconds: 220),
     reverseTransitionDuration: const Duration(milliseconds: 180),
-    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+    transitionsBuilder: (context, animation, _, child) {
       final curved = CurvedAnimation(
         parent: animation,
         curve: Curves.easeOutCubic,
         reverseCurve: Curves.easeInCubic,
       );
-      return FadeTransition(
-        opacity: Tween<double>(begin: 0.0, end: 1.0).animate(curved),
+      return ColoredBox(
+        color: _background(context),
         child: SlideTransition(
           position: Tween<Offset>(
             begin: const Offset(0.025, 0),
@@ -2377,6 +2378,9 @@ class _AppearancePageState extends State<AppearancePage> {
   late String appearanceMode;
   late int themeColorValue;
   late double fontScale;
+  late String codeThemeId;
+  late int codeBackgroundValue;
+  late final TextEditingController codeBackground;
 
   @override
   void initState() {
@@ -2387,13 +2391,31 @@ class _AppearancePageState extends State<AppearancePage> {
     appearanceMode = settings.appearanceMode;
     themeColorValue = settings.themeColorValue;
     fontScale = settings.fontScale.clamp(0.74, 1.28).toDouble();
+    codeThemeId = codeThemeById(settings.codeThemeId).id;
+    codeBackgroundValue = settings.codeBackgroundValue;
+    codeBackground = TextEditingController(
+      text: _hexFromColorValue(codeBackgroundValue),
+    );
+  }
+
+  @override
+  void dispose() {
+    codeBackground.dispose();
+    super.dispose();
   }
 
   Future<void> _save() async {
+    final parsedBackground = _parseHexColor(codeBackground.text);
+    if (codeBackground.text.trim().isNotEmpty && parsedBackground == null) {
+      _snack(context, '代码背景颜色格式应为 #RRGGBB。');
+      return;
+    }
     final next = copySettings(widget.store.settings)
       ..appearanceMode = appearanceMode
       ..themeColorValue = themeColorValue
       ..fontScale = fontScale
+      ..codeThemeId = codeThemeById(codeThemeId).id
+      ..codeBackgroundValue = parsedBackground ?? 0
       ..showSessionTitle = showSessionTitle
       ..haptics = haptics;
     await widget.store.updateSettings(next, widget.store.apiKey);
@@ -2504,6 +2526,47 @@ class _AppearancePageState extends State<AppearancePage> {
             ),
           ),
           _AppearancePanel(
+            title: '代码块',
+            subtitle: '主题、语法高亮和背景',
+            child: Column(
+              children: [
+                _CodeThemePreview(
+                  themeId: codeThemeId,
+                  backgroundValue:
+                      _parseHexColor(codeBackground.text) ?? codeBackgroundValue,
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: codeThemeOptions
+                      .map(
+                        (theme) => _AppearancePill(
+                          label: theme.label,
+                          selected: codeThemeId == theme.id,
+                          onTap: () => setState(() => codeThemeId = theme.id),
+                        ),
+                      )
+                      .toList(),
+                ),
+                const SizedBox(height: 14),
+                _CodeBackgroundField(
+                  controller: codeBackground,
+                  onChanged: (value) {
+                    setState(() {
+                      codeBackgroundValue = _parseHexColor(value) ?? 0;
+                    });
+                  },
+                  onClear: () {
+                    codeBackground.clear();
+                    setState(() => codeBackgroundValue = 0);
+                  },
+                ),
+              ],
+            ),
+          ),
+          _AppearancePanel(
             title: '交互',
             child: Column(
               children: [
@@ -2606,6 +2669,32 @@ const _themeColorPresets = [
   _ThemeColorPreset('雾灰', 0xFFE4E7EC),
 ];
 
+String _hexFromColorValue(int value) {
+  if (value == 0) {
+    return '';
+  }
+  final rgb = value & 0x00FFFFFF;
+  return '#${rgb.toRadixString(16).padLeft(6, '0').toUpperCase()}';
+}
+
+int? _parseHexColor(String source) {
+  var text = source.trim();
+  if (text.isEmpty) {
+    return 0;
+  }
+  if (text.startsWith('#')) {
+    text = text.substring(1);
+  }
+  if (text.length != 6 && text.length != 8) {
+    return null;
+  }
+  final value = int.tryParse(text, radix: 16);
+  if (value == null) {
+    return null;
+  }
+  return text.length == 6 ? 0xFF000000 | value : value;
+}
+
 class _AppearancePill extends StatelessWidget {
   const _AppearancePill({
     required this.label,
@@ -2706,6 +2795,85 @@ class _ThemeColorChoice extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _CodeThemePreview extends StatelessWidget {
+  const _CodeThemePreview({
+    required this.themeId,
+    required this.backgroundValue,
+  });
+
+  final String themeId;
+  final int backgroundValue;
+
+  @override
+  Widget build(BuildContext context) {
+    return MessageRenderer(
+      content: '''
+```dart
+class ChatState {
+  const ChatState({required this.title});
+
+  final String title;
+
+  bool shouldSearch(String text) {
+    final keywords = ['today', 'latest'];
+    return keywords.any(text.contains);
+  }
+}
+```''',
+      textColor: _textColor(context),
+      mutedColor: _mutedColor(context),
+      codeBackground: _softColor(context),
+      isUser: false,
+      codeThemeId: themeId,
+      codeBackgroundValue: backgroundValue,
+    );
+  }
+}
+
+class _CodeBackgroundField extends StatelessWidget {
+  const _CodeBackgroundField({
+    required this.controller,
+    required this.onChanged,
+    required this.onClear,
+  });
+
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      onChanged: onChanged,
+      cursorColor: _textColor(context),
+      textCapitalization: TextCapitalization.characters,
+      inputFormatters: [
+        FilteringTextInputFormatter.allow(RegExp(r'[0-9a-fA-F#]')),
+        LengthLimitingTextInputFormatter(9),
+      ],
+      decoration: InputDecoration(
+        hintText: '自定义背景色，例如 #F7F7F7',
+        hintStyle: TextStyle(color: _mutedColor(context), fontSize: 13.5),
+        filled: true,
+        fillColor: _softColor(context),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide.none,
+        ),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        suffixIcon: IconButton(
+          tooltip: '跟随主题',
+          icon: Icon(Icons.close_rounded, color: _mutedColor(context), size: 18),
+          onPressed: onClear,
+        ),
+      ),
+      style: TextStyle(color: _textColor(context), fontSize: 14),
     );
   }
 }

@@ -9,6 +9,257 @@ import 'package:markdown/markdown.dart' as md;
 
 import '../models.dart';
 
+class CodeThemeOption {
+  const CodeThemeOption({
+    required this.id,
+    required this.label,
+    this.background,
+    this.foreground,
+    this.comment,
+    this.string,
+    this.number,
+    this.keyword,
+    this.type,
+    this.function,
+    this.operator,
+    this.gutter,
+  });
+
+  final String id;
+  final String label;
+  final Color? background;
+  final Color? foreground;
+  final Color? comment;
+  final Color? string;
+  final Color? number;
+  final Color? keyword;
+  final Color? type;
+  final Color? function;
+  final Color? operator;
+  final Color? gutter;
+}
+
+const codeThemeOptions = <CodeThemeOption>[
+  CodeThemeOption(id: 'default', label: '默认'),
+  CodeThemeOption(
+    id: 'github-light',
+    label: 'GitHub Light',
+    background: Color(0xFFFFFFFF),
+    foreground: Color(0xFF24292F),
+    comment: Color(0xFF6E7781),
+    string: Color(0xFF0A3069),
+    number: Color(0xFF0550AE),
+    keyword: Color(0xFFCF222E),
+    type: Color(0xFF8250DF),
+    function: Color(0xFF8250DF),
+    operator: Color(0xFF57606A),
+    gutter: Color(0xFF8C959F),
+  ),
+  CodeThemeOption(
+    id: 'vscode-light',
+    label: 'VS Code Light',
+    background: Color(0xFFFFFFFF),
+    foreground: Color(0xFF1F1F1F),
+    comment: Color(0xFF008000),
+    string: Color(0xFFA31515),
+    number: Color(0xFF098658),
+    keyword: Color(0xFF0000FF),
+    type: Color(0xFF267F99),
+    function: Color(0xFF795E26),
+    operator: Color(0xFF333333),
+    gutter: Color(0xFF858585),
+  ),
+  CodeThemeOption(
+    id: 'one-light',
+    label: 'One Light',
+    background: Color(0xFFFAFAFA),
+    foreground: Color(0xFF383A42),
+    comment: Color(0xFFA0A1A7),
+    string: Color(0xFF50A14F),
+    number: Color(0xFF986801),
+    keyword: Color(0xFFA626A4),
+    type: Color(0xFFC18401),
+    function: Color(0xFF4078F2),
+    operator: Color(0xFF383A42),
+    gutter: Color(0xFF9DA5B4),
+  ),
+  CodeThemeOption(
+    id: 'solarized-light',
+    label: 'Solarized Light',
+    background: Color(0xFFFDF6E3),
+    foreground: Color(0xFF657B83),
+    comment: Color(0xFF93A1A1),
+    string: Color(0xFF2AA198),
+    number: Color(0xFFD33682),
+    keyword: Color(0xFF859900),
+    type: Color(0xFFB58900),
+    function: Color(0xFF268BD2),
+    operator: Color(0xFF586E75),
+    gutter: Color(0xFF93A1A1),
+  ),
+  CodeThemeOption(
+    id: 'ayu-light',
+    label: 'Ayu Light',
+    background: Color(0xFFFAFAFA),
+    foreground: Color(0xFF5C6773),
+    comment: Color(0xFFABB0B6),
+    string: Color(0xFF86B300),
+    number: Color(0xFFA37ACC),
+    keyword: Color(0xFFFA8D3E),
+    type: Color(0xFF399EE6),
+    function: Color(0xFFF2AE49),
+    operator: Color(0xFFED9366),
+    gutter: Color(0xFFA1A6AC),
+  ),
+  CodeThemeOption(
+    id: 'github-dark',
+    label: 'GitHub Dark',
+    background: Color(0xFF0D1117),
+    foreground: Color(0xFFC9D1D9),
+    comment: Color(0xFF8B949E),
+    string: Color(0xFFA5D6FF),
+    number: Color(0xFF79C0FF),
+    keyword: Color(0xFFFF7B72),
+    type: Color(0xFFD2A8FF),
+    function: Color(0xFFD2A8FF),
+    operator: Color(0xFFC9D1D9),
+    gutter: Color(0xFF6E7681),
+  ),
+  CodeThemeOption(
+    id: 'vscode-dark',
+    label: 'VS Code Dark',
+    background: Color(0xFF1E1E1E),
+    foreground: Color(0xFFD4D4D4),
+    comment: Color(0xFF6A9955),
+    string: Color(0xFFCE9178),
+    number: Color(0xFFB5CEA8),
+    keyword: Color(0xFF569CD6),
+    type: Color(0xFF4EC9B0),
+    function: Color(0xFFDCDCAA),
+    operator: Color(0xFFD4D4D4),
+    gutter: Color(0xFF858585),
+  ),
+  CodeThemeOption(
+    id: 'one-dark',
+    label: 'One Dark',
+    background: Color(0xFF282C34),
+    foreground: Color(0xFFABB2BF),
+    comment: Color(0xFF5C6370),
+    string: Color(0xFF98C379),
+    number: Color(0xFFD19A66),
+    keyword: Color(0xFFC678DD),
+    type: Color(0xFFE5C07B),
+    function: Color(0xFF61AFEF),
+    operator: Color(0xFF56B6C2),
+    gutter: Color(0xFF636D83),
+  ),
+  CodeThemeOption(
+    id: 'dracula',
+    label: 'Dracula',
+    background: Color(0xFF282A36),
+    foreground: Color(0xFFF8F8F2),
+    comment: Color(0xFF6272A4),
+    string: Color(0xFFF1FA8C),
+    number: Color(0xFFBD93F9),
+    keyword: Color(0xFFFF79C6),
+    type: Color(0xFF8BE9FD),
+    function: Color(0xFF50FA7B),
+    operator: Color(0xFFFF79C6),
+    gutter: Color(0xFF7B86B8),
+  ),
+  CodeThemeOption(
+    id: 'monokai',
+    label: 'Monokai',
+    background: Color(0xFF272822),
+    foreground: Color(0xFFF8F8F2),
+    comment: Color(0xFF75715E),
+    string: Color(0xFFE6DB74),
+    number: Color(0xFFAE81FF),
+    keyword: Color(0xFFF92672),
+    type: Color(0xFF66D9EF),
+    function: Color(0xFFA6E22E),
+    operator: Color(0xFFF92672),
+    gutter: Color(0xFF90908A),
+  ),
+  CodeThemeOption(
+    id: 'nord',
+    label: 'Nord',
+    background: Color(0xFF2E3440),
+    foreground: Color(0xFFD8DEE9),
+    comment: Color(0xFF616E88),
+    string: Color(0xFFA3BE8C),
+    number: Color(0xFFB48EAD),
+    keyword: Color(0xFF81A1C1),
+    type: Color(0xFF8FBCBB),
+    function: Color(0xFF88C0D0),
+    operator: Color(0xFF81A1C1),
+    gutter: Color(0xFF6B7488),
+  ),
+  CodeThemeOption(
+    id: 'night-owl',
+    label: 'Night Owl',
+    background: Color(0xFF011627),
+    foreground: Color(0xFFD6DEEB),
+    comment: Color(0xFF637777),
+    string: Color(0xFFECC48D),
+    number: Color(0xFFF78C6C),
+    keyword: Color(0xFFC792EA),
+    type: Color(0xFFFFCB8B),
+    function: Color(0xFF82AAFF),
+    operator: Color(0xFFC792EA),
+    gutter: Color(0xFF5F7E97),
+  ),
+  CodeThemeOption(
+    id: 'tokyo-night',
+    label: 'Tokyo Night',
+    background: Color(0xFF1A1B26),
+    foreground: Color(0xFFC0CAF5),
+    comment: Color(0xFF565F89),
+    string: Color(0xFF9ECE6A),
+    number: Color(0xFFFF9E64),
+    keyword: Color(0xFFBB9AF7),
+    type: Color(0xFF2AC3DE),
+    function: Color(0xFF7AA2F7),
+    operator: Color(0xFF89DDFF),
+    gutter: Color(0xFF6A6F8F),
+  ),
+  CodeThemeOption(
+    id: 'catppuccin',
+    label: 'Catppuccin',
+    background: Color(0xFF1E1E2E),
+    foreground: Color(0xFFCDD6F4),
+    comment: Color(0xFF6C7086),
+    string: Color(0xFFA6E3A1),
+    number: Color(0xFFFAB387),
+    keyword: Color(0xFFCBA6F7),
+    type: Color(0xFFF9E2AF),
+    function: Color(0xFF89B4FA),
+    operator: Color(0xFF89DCEB),
+    gutter: Color(0xFF7F849C),
+  ),
+  CodeThemeOption(
+    id: 'palenight',
+    label: 'Palenight',
+    background: Color(0xFF292D3E),
+    foreground: Color(0xFFA6ACCD),
+    comment: Color(0xFF676E95),
+    string: Color(0xFFC3E88D),
+    number: Color(0xFFF78C6C),
+    keyword: Color(0xFFC792EA),
+    type: Color(0xFFFFCB6B),
+    function: Color(0xFF82AAFF),
+    operator: Color(0xFF89DDFF),
+    gutter: Color(0xFF737AA2),
+  ),
+];
+
+CodeThemeOption codeThemeById(String id) {
+  return codeThemeOptions.firstWhere(
+    (theme) => theme.id == id,
+    orElse: () => codeThemeOptions.first,
+  );
+}
+
 class MessageRenderer extends StatelessWidget {
   const MessageRenderer({
     super.key,
@@ -18,6 +269,8 @@ class MessageRenderer extends StatelessWidget {
     required this.codeBackground,
     required this.isUser,
     this.animate = false,
+    this.codeThemeId = 'default',
+    this.codeBackgroundValue = 0,
   });
 
   final String content;
@@ -26,6 +279,8 @@ class MessageRenderer extends StatelessWidget {
   final Color codeBackground;
   final bool isUser;
   final bool animate;
+  final String codeThemeId;
+  final int codeBackgroundValue;
 
   @override
   Widget build(BuildContext context) {
@@ -50,6 +305,8 @@ class MessageRenderer extends StatelessWidget {
                 mutedColor: mutedColor,
                 codeBackground: codeBackground,
                 isUser: isUser,
+                codeThemeId: codeThemeId,
+                codeBackgroundValue: codeBackgroundValue,
               ),
             ),
           ),
@@ -109,6 +366,8 @@ class _BlockView extends StatelessWidget {
     required this.mutedColor,
     required this.codeBackground,
     required this.isUser,
+    required this.codeThemeId,
+    required this.codeBackgroundValue,
   });
 
   final _MessageBlock block;
@@ -116,6 +375,8 @@ class _BlockView extends StatelessWidget {
   final Color mutedColor;
   final Color codeBackground;
   final bool isUser;
+  final String codeThemeId;
+  final int codeBackgroundValue;
 
   @override
   Widget build(BuildContext context) {
@@ -140,6 +401,8 @@ class _BlockView extends StatelessWidget {
           mutedColor: mutedColor,
           backgroundColor: codeBackground,
           isUser: isUser,
+          codeThemeId: codeThemeId,
+          codeBackgroundValue: codeBackgroundValue,
         ),
       _MessageBlockKind.table => _MarkdownTable(
           table: block.table!,
@@ -379,6 +642,8 @@ class _CodeBlock extends StatefulWidget {
     required this.mutedColor,
     required this.backgroundColor,
     required this.isUser,
+    required this.codeThemeId,
+    required this.codeBackgroundValue,
   });
 
   final String code;
@@ -387,6 +652,8 @@ class _CodeBlock extends StatefulWidget {
   final Color mutedColor;
   final Color backgroundColor;
   final bool isUser;
+  final String codeThemeId;
+  final int codeBackgroundValue;
 
   @override
   State<_CodeBlock> createState() => _CodeBlockState();
@@ -405,9 +672,16 @@ class _CodeBlockState extends State<_CodeBlock> {
     final language = _languageLabel(widget.language, widget.code);
     final safeSvg = _isSvgLanguage(language) && _isSafeSvg(widget.code);
     final showPreview = safeSvg && _preview;
-    final background = widget.isUser
-        ? widget.textColor.withValues(alpha: 0.10)
-        : widget.backgroundColor;
+    final codeTheme = _resolvedCodeTheme(
+      themeId: widget.codeThemeId,
+      customBackgroundValue: widget.codeBackgroundValue,
+      fallbackBackground: widget.isUser
+          ? widget.textColor.withValues(alpha: 0.10)
+          : widget.backgroundColor,
+      fallbackText: widget.textColor,
+      fallbackMuted: widget.mutedColor,
+    );
+    final background = codeTheme.background;
     final borderColor = widget.mutedColor.withValues(alpha: 0.12);
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
@@ -423,7 +697,7 @@ class _CodeBlockState extends State<_CodeBlock> {
             _CodeToolbar(
               language: language,
               mutedColor: widget.mutedColor,
-              textColor: widget.textColor,
+              textColor: codeTheme.foreground,
               canPreview: safeSvg,
               preview: _preview,
               wrap: _wrap,
@@ -450,7 +724,8 @@ class _CodeBlockState extends State<_CodeBlock> {
             AnimatedCrossFade(
               firstChild: _CodeTextBody(
                 code: widget.code,
-                textColor: widget.textColor,
+                language: language,
+                theme: codeTheme,
                 backgroundColor: background,
                 wrap: _wrap,
                 collapsed: _isLong && !_expanded,
@@ -592,14 +867,16 @@ class _CodeIconButton extends StatelessWidget {
 class _CodeTextBody extends StatelessWidget {
   const _CodeTextBody({
     required this.code,
-    required this.textColor,
+    required this.language,
+    required this.theme,
     required this.backgroundColor,
     required this.wrap,
     required this.collapsed,
   });
 
   final String code;
-  final Color textColor;
+  final String language;
+  final _ResolvedCodeTheme theme;
   final Color backgroundColor;
   final bool wrap;
   final bool collapsed;
@@ -608,33 +885,81 @@ class _CodeTextBody extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final codeText = SelectableText(
-          code,
-          style: TextStyle(
-            color: textColor.withValues(alpha: 0.92),
-            fontSize: 13,
-            height: 1.5,
-            letterSpacing: 0,
-            fontFamily: 'monospace',
+        final lineCount = code.isEmpty ? 1 : '\n'.allMatches(code).length + 1;
+        final gutterWidth = (lineCount.toString().length * 7.0 + 18)
+            .clamp(30.0, 54.0)
+            .toDouble();
+        final baseStyle = TextStyle(
+          color: theme.foreground.withValues(alpha: 0.96),
+          fontSize: 13,
+          height: 1.5,
+          letterSpacing: 0,
+          fontFamily: 'monospace',
+        );
+        final codeText = SelectableText.rich(
+          _highlightCode(
+            code: code,
+            language: language,
+            theme: theme,
+            baseStyle: baseStyle,
           ),
         );
-        Widget body = Padding(
-          padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
-          child: wrap
-              ? codeText
-              : SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minWidth: constraints.maxWidth.isFinite
-                          ? (constraints.maxWidth - 24)
-                              .clamp(0, double.infinity)
-                              .toDouble()
-                          : 0,
-                    ),
-                    child: codeText,
+        final lineNumbers = List.generate(lineCount, (index) => '${index + 1}')
+            .join('\n');
+        Widget codePane;
+        if (wrap) {
+          codePane = Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: gutterWidth,
+                child: Text(
+                  lineNumbers,
+                  textAlign: TextAlign.right,
+                  style: baseStyle.copyWith(
+                    color: theme.gutter.withValues(alpha: 0.62),
+                    fontSize: 12,
                   ),
                 ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(child: codeText),
+            ],
+          );
+        } else {
+          final minCodeWidth = constraints.maxWidth.isFinite
+              ? (constraints.maxWidth - gutterWidth - 48)
+                  .clamp(0, double.infinity)
+                  .toDouble()
+              : 0.0;
+          codePane = SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: gutterWidth,
+                  child: Text(
+                    lineNumbers,
+                    textAlign: TextAlign.right,
+                    style: baseStyle.copyWith(
+                      color: theme.gutter.withValues(alpha: 0.62),
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                ConstrainedBox(
+                  constraints: BoxConstraints(minWidth: minCodeWidth),
+                  child: codeText,
+                ),
+              ],
+            ),
+          );
+        }
+        Widget body = Padding(
+          padding: const EdgeInsets.fromLTRB(10, 11, 12, 12),
+          child: codePane,
         );
         if (collapsed) {
           body = SizedBox(
@@ -657,7 +982,7 @@ class _CodeTextBody extends StatelessWidget {
                           end: Alignment.bottomCenter,
                           colors: [
                             Colors.transparent,
-                            Colors.white.withValues(alpha: 0.92),
+                            backgroundColor.withValues(alpha: 0.96),
                           ],
                         ),
                       ),
@@ -673,6 +998,331 @@ class _CodeTextBody extends StatelessWidget {
     );
   }
 }
+
+class _ResolvedCodeTheme {
+  const _ResolvedCodeTheme({
+    required this.background,
+    required this.foreground,
+    required this.comment,
+    required this.string,
+    required this.number,
+    required this.keyword,
+    required this.type,
+    required this.function,
+    required this.operator,
+    required this.gutter,
+  });
+
+  final Color background;
+  final Color foreground;
+  final Color comment;
+  final Color string;
+  final Color number;
+  final Color keyword;
+  final Color type;
+  final Color function;
+  final Color operator;
+  final Color gutter;
+}
+
+_ResolvedCodeTheme _resolvedCodeTheme({
+  required String themeId,
+  required int customBackgroundValue,
+  required Color fallbackBackground,
+  required Color fallbackText,
+  required Color fallbackMuted,
+}) {
+  final option = codeThemeById(themeId);
+  final customBackground = customBackgroundValue == 0
+      ? null
+      : Color(0xFF000000 | (customBackgroundValue & 0x00FFFFFF));
+  final background = customBackground ?? option.background ?? fallbackBackground;
+  final foreground = option.foreground ??
+      (customBackground == null ? fallbackText : _readableCodeText(background));
+  final muted = fallbackMuted;
+  return _ResolvedCodeTheme(
+    background: background,
+    foreground: foreground,
+    comment: option.comment ?? muted.withValues(alpha: 0.82),
+    string: option.string ?? foreground.withValues(alpha: 0.86),
+    number: option.number ?? foreground.withValues(alpha: 0.86),
+    keyword: option.keyword ?? foreground,
+    type: option.type ?? foreground.withValues(alpha: 0.90),
+    function: option.function ?? foreground.withValues(alpha: 0.92),
+    operator: option.operator ?? foreground.withValues(alpha: 0.72),
+    gutter: option.gutter ?? muted.withValues(alpha: 0.70),
+  );
+}
+
+Color _readableCodeText(Color background) {
+  return background.computeLuminance() > 0.45
+      ? const Color(0xFF1F1F1F)
+      : const Color(0xFFF3F3F3);
+}
+
+TextSpan _highlightCode({
+  required String code,
+  required String language,
+  required _ResolvedCodeTheme theme,
+  required TextStyle baseStyle,
+}) {
+  final spans = <TextSpan>[];
+  final pattern = RegExp(
+    '("""[\\s\\S]*?"""|\\\'\\\'\\\'[\\s\\S]*?\\\'\\\'\\\'|'
+    '"(?:\\\\.|[^"\\\\])*"|\\\'(?:\\\\.|[^\\\'\\\\])*\\\'|'
+    '//[^\\n]*|/\\*[\\s\\S]*?\\*/|#[^\\n]*|'
+    '\\b\\d+(?:\\.\\d+)?\\b|\\b[A-Za-z_\\\$][\\w\\\$]*\\b|'
+    '[{}()[\\];,.<>:+\\-*/%=!&|^~?]+)',
+    multiLine: true,
+  );
+  var cursor = 0;
+  for (final match in pattern.allMatches(code)) {
+    if (match.start > cursor) {
+      spans.add(TextSpan(text: code.substring(cursor, match.start)));
+    }
+    final token = match[0] ?? '';
+    spans.add(
+      TextSpan(
+        text: token,
+        style: baseStyle.copyWith(
+          color: _tokenColor(
+            token: token,
+            code: code,
+            end: match.end,
+            language: language,
+            theme: theme,
+          ),
+          fontWeight: _tokenWeight(token, language),
+        ),
+      ),
+    );
+    cursor = match.end;
+  }
+  if (cursor < code.length) {
+    spans.add(TextSpan(text: code.substring(cursor)));
+  }
+  return TextSpan(style: baseStyle, children: spans);
+}
+
+Color _tokenColor({
+  required String token,
+  required String code,
+  required int end,
+  required String language,
+  required _ResolvedCodeTheme theme,
+}) {
+  final normalized = language.toLowerCase();
+  if (_isCommentToken(token, normalized)) {
+    return theme.comment;
+  }
+  if (_isStringToken(token)) {
+    return theme.string;
+  }
+  if (RegExp(r'^\d').hasMatch(token)) {
+    return theme.number;
+  }
+  if (RegExp(r'^[{}()[\];,.<>:+\-*/%=!&|^~?]+$').hasMatch(token)) {
+    return theme.operator;
+  }
+  final keywordToken = normalized == 'sql' ? token.toLowerCase() : token;
+  if (_keywordsFor(normalized).contains(keywordToken)) {
+    return theme.keyword;
+  }
+  if (_typeWords.contains(token) ||
+      RegExp(r'^[A-Z][A-Za-z0-9_]*$').hasMatch(token)) {
+    return theme.type;
+  }
+  final after = code.substring(end).trimLeft();
+  if (after.startsWith('(')) {
+    return theme.function;
+  }
+  return theme.foreground;
+}
+
+FontWeight _tokenWeight(String token, String language) {
+  final normalized = language.toLowerCase();
+  final keywordToken = normalized == 'sql' ? token.toLowerCase() : token;
+  if (_keywordsFor(normalized).contains(keywordToken)) {
+    return FontWeight.w600;
+  }
+  return FontWeight.w400;
+}
+
+bool _isStringToken(String token) {
+  return token.startsWith('"') ||
+      token.startsWith("'") ||
+      token.startsWith('"""') ||
+      token.startsWith("'''");
+}
+
+bool _isCommentToken(String token, String language) {
+  if (token.startsWith('//') || token.startsWith('/*')) {
+    return true;
+  }
+  if (!token.startsWith('#')) {
+    return false;
+  }
+  return {
+    'python',
+    'py',
+    'ruby',
+    'rb',
+    'shell',
+    'bash',
+    'sh',
+    'zsh',
+    'yaml',
+    'yml',
+    'toml',
+    'ini',
+    'dockerfile',
+  }.contains(language);
+}
+
+Set<String> _keywordsFor(String language) {
+  const common = {
+    'as',
+    'async',
+    'await',
+    'break',
+    'case',
+    'catch',
+    'class',
+    'const',
+    'continue',
+    'default',
+    'do',
+    'else',
+    'enum',
+    'export',
+    'extends',
+    'false',
+    'final',
+    'finally',
+    'for',
+    'from',
+    'function',
+    'if',
+    'import',
+    'in',
+    'is',
+    'let',
+    'new',
+    'null',
+    'return',
+    'static',
+    'super',
+    'switch',
+    'this',
+    'throw',
+    'true',
+    'try',
+    'var',
+    'void',
+    'while',
+    'with',
+    'yield',
+  };
+  const python = {
+    'and',
+    'as',
+    'assert',
+    'async',
+    'await',
+    'break',
+    'class',
+    'continue',
+    'def',
+    'del',
+    'elif',
+    'else',
+    'except',
+    'False',
+    'finally',
+    'for',
+    'from',
+    'global',
+    'if',
+    'import',
+    'in',
+    'is',
+    'lambda',
+    'None',
+    'nonlocal',
+    'not',
+    'or',
+    'pass',
+    'raise',
+    'return',
+    'True',
+    'try',
+    'while',
+    'with',
+    'yield',
+  };
+  const sql = {
+    'select',
+    'from',
+    'where',
+    'join',
+    'left',
+    'right',
+    'inner',
+    'outer',
+    'group',
+    'by',
+    'order',
+    'insert',
+    'update',
+    'delete',
+    'create',
+    'alter',
+    'drop',
+    'table',
+    'into',
+    'values',
+    'and',
+    'or',
+    'not',
+    'null',
+    'limit',
+    'offset',
+    'having',
+    'distinct',
+  };
+  if (language == 'python' || language == 'py') {
+    return python;
+  }
+  if (language == 'sql') {
+    return sql;
+  }
+  return common;
+}
+
+const _typeWords = {
+  'String',
+  'int',
+  'double',
+  'bool',
+  'num',
+  'List',
+  'Map',
+  'Set',
+  'Future',
+  'Stream',
+  'Widget',
+  'State',
+  'BuildContext',
+  'Object',
+  'dynamic',
+  'void',
+  'number',
+  'boolean',
+  'unknown',
+  'never',
+  'Promise',
+  'Record',
+};
 
 class _SvgPreview extends StatelessWidget {
   const _SvgPreview({

@@ -648,6 +648,8 @@ class AppSettings {
     this.appearanceMode = 'light',
     this.themeColorValue = 0xFFE9E9E9,
     this.fontScale = 1,
+    this.codeThemeId = 'default',
+    this.codeBackgroundValue = 0,
     this.showSessionTitle = true,
     this.haptics = true,
   })  : providers = providers ?? [],
@@ -680,6 +682,8 @@ class AppSettings {
   String appearanceMode;
   int themeColorValue;
   double fontScale;
+  String codeThemeId;
+  int codeBackgroundValue;
   bool showSessionTitle;
   bool haptics;
 
@@ -710,6 +714,8 @@ class AppSettings {
         'appearanceMode': appearanceMode,
         'themeColorValue': themeColorValue,
         'fontScale': fontScale,
+        'codeThemeId': codeThemeId,
+        'codeBackgroundValue': codeBackgroundValue,
         'showSessionTitle': showSessionTitle,
         'haptics': haptics,
       };
@@ -743,6 +749,8 @@ class AppSettings {
       appearanceMode: json['appearanceMode'] as String? ?? 'light',
       themeColorValue: _toInt(json['themeColorValue']) ?? 0xFFE9E9E9,
       fontScale: _toDouble(json['fontScale']) ?? 1,
+      codeThemeId: json['codeThemeId'] as String? ?? 'default',
+      codeBackgroundValue: _toInt(json['codeBackgroundValue']) ?? 0,
       showSessionTitle: json['showSessionTitle'] as bool? ?? true,
       haptics: json['haptics'] as bool? ?? true,
     );
