@@ -304,7 +304,6 @@ class _ChatScreenState extends State<ChatScreen> {
           children: [
             _AssistantWallpaper(assistant: assistant),
             Positioned.fill(
-              bottom: 96,
               child: GestureDetector(
                 behavior: HitTestBehavior.translucent,
                 onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
@@ -351,6 +350,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ),
             ),
+            const _BottomChatFade(),
             _ImmersiveTopBar(
               key: _topBarKey,
               assistant: assistant,
@@ -677,6 +677,37 @@ class _EmptyChat extends StatelessWidget {
         ),
       ),
       child: const SizedBox.expand(),
+    );
+  }
+}
+
+class _BottomChatFade extends StatelessWidget {
+  const _BottomChatFade();
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.paddingOf(context).bottom;
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      height: bottom + 118,
+      child: IgnorePointer(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                _background(context).withValues(alpha: 0),
+                _background(context).withValues(alpha: 0.34),
+                _background(context).withValues(alpha: 0.92),
+              ],
+              stops: const [0, 0.58, 1],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1386,140 +1417,118 @@ class _ComposerState extends State<Composer> {
             widget.onSurfaceProbe();
           });
         },
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        _background(context).withValues(alpha: 0),
-                        _background(context).withValues(alpha: 0.48),
-                      ],
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 190),
+            curve: Curves.easeOutCubic,
+            constraints: const BoxConstraints(minHeight: 48, maxHeight: 154),
+            padding: const EdgeInsets.fromLTRB(5, 4, 5, 4),
+            decoration: BoxDecoration(
+              color: _surface(context),
+              borderRadius: BorderRadius.circular(26),
+              boxShadow: [
+                BoxShadow(
+                  color: _shadowColor(context, 0.10),
+                  blurRadius: 24,
+                  spreadRadius: 1,
+                ),
+              ],
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Builder(
+                  builder: (buttonContext) {
+                    return IconButton(
+                      tooltip: '添加',
+                      visualDensity: VisualDensity.compact,
+                      icon: Icon(
+                        Icons.add_rounded,
+                        color: _mutedColor(context),
+                        size: 24,
+                      ),
+                      onPressed: () {
+                        final render =
+                            buttonContext.findRenderObject() as RenderBox?;
+                        final anchor = render == null
+                            ? Offset.zero
+                            : render.localToGlobal(
+                                render.size.center(Offset.zero),
+                              );
+                        widget.onOpenMenu(anchor);
+                      },
+                    );
+                  },
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 7),
+                    child: TextField(
+                      key: widget.textFieldKey,
+                      controller: widget.controller,
+                      focusNode: widget.focusNode,
+                      minLines: 1,
+                      maxLines: 6,
+                      textInputAction: TextInputAction.newline,
+                      cursorColor: sendColor,
+                      onTap: () {
+                        AppLogger.instance.info('composer', 'textField tap');
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          widget.onSurfaceProbe();
+                        });
+                      },
+                      onTapOutside: (_) {
+                        AppLogger.instance
+                            .info('composer', 'textField tapOutside');
+                        widget.focusNode.unfocus();
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          widget.onSurfaceProbe();
+                        });
+                      },
+                      decoration: InputDecoration(
+                        isDense: true,
+                        border: InputBorder.none,
+                        hintText: '问点什么…',
+                        hintStyle: TextStyle(
+                          color: _mutedColor(context),
+                          fontSize: 15.5,
+                        ),
+                      ),
+                      style: TextStyle(
+                        color: sendColor,
+                        fontSize: 15.5,
+                        height: 1.35,
+                        letterSpacing: 0,
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 190),
-                curve: Curves.easeOutCubic,
-                constraints: const BoxConstraints(minHeight: 48, maxHeight: 154),
-                padding: const EdgeInsets.fromLTRB(5, 4, 5, 4),
-                decoration: BoxDecoration(
-                  color: _surface(context),
-                  borderRadius: BorderRadius.circular(26),
-                  boxShadow: [
-                    BoxShadow(
-                      color: _shadowColor(context, 0.10),
-                      blurRadius: 24,
-                      spreadRadius: 1,
-                    ),
-                  ],
+                const SizedBox(width: 4),
+                IconButton(
+                  tooltip: widget.isSending ? '停止' : '发送',
+                  visualDensity: VisualDensity.compact,
+                  style: IconButton.styleFrom(
+                    backgroundColor: widget.isSending || hasText
+                        ? sendColor
+                        : _softColor(context),
+                    foregroundColor: _background(context),
+                    disabledForegroundColor: _mutedColor(context),
+                    fixedSize: const Size(36, 36),
+                  ),
+                  icon: Icon(
+                    widget.isSending ? Icons.stop_rounded : Icons.arrow_upward,
+                    size: 19,
+                  ),
+                  onPressed: widget.isSending
+                      ? widget.onStop
+                      : hasText
+                          ? widget.onSend
+                          : null,
                 ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Builder(
-                      builder: (buttonContext) {
-                        return IconButton(
-                          tooltip: '添加',
-                          visualDensity: VisualDensity.compact,
-                          icon: Icon(
-                            Icons.add_rounded,
-                            color: _mutedColor(context),
-                            size: 24,
-                          ),
-                          onPressed: () {
-                            final render =
-                                buttonContext.findRenderObject() as RenderBox?;
-                            final anchor = render == null
-                                ? Offset.zero
-                                : render.localToGlobal(
-                                    render.size.center(Offset.zero),
-                                  );
-                            widget.onOpenMenu(anchor);
-                          },
-                        );
-                      },
-                    ),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 7),
-                        child: TextField(
-                          key: widget.textFieldKey,
-                          controller: widget.controller,
-                          focusNode: widget.focusNode,
-                          minLines: 1,
-                          maxLines: 6,
-                          textInputAction: TextInputAction.newline,
-                          cursorColor: sendColor,
-                          onTap: () {
-                            AppLogger.instance.info('composer', 'textField tap');
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              widget.onSurfaceProbe();
-                            });
-                          },
-                          onTapOutside: (_) {
-                            AppLogger.instance
-                                .info('composer', 'textField tapOutside');
-                            widget.focusNode.unfocus();
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              widget.onSurfaceProbe();
-                            });
-                          },
-                          decoration: InputDecoration(
-                            isDense: true,
-                            border: InputBorder.none,
-                            hintText: '问点什么…',
-                            hintStyle: TextStyle(
-                              color: _mutedColor(context),
-                              fontSize: 15.5,
-                            ),
-                          ),
-                          style: TextStyle(
-                            color: sendColor,
-                            fontSize: 15.5,
-                            height: 1.35,
-                            letterSpacing: 0,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    IconButton(
-                      tooltip: widget.isSending ? '停止' : '发送',
-                      visualDensity: VisualDensity.compact,
-                      style: IconButton.styleFrom(
-                        backgroundColor: widget.isSending || hasText
-                            ? sendColor
-                            : _softColor(context),
-                        foregroundColor: _background(context),
-                        disabledForegroundColor: _mutedColor(context),
-                        fixedSize: const Size(36, 36),
-                      ),
-                      icon: Icon(
-                        widget.isSending
-                            ? Icons.stop_rounded
-                            : Icons.arrow_upward,
-                        size: 19,
-                      ),
-                      onPressed: widget.isSending
-                          ? widget.onStop
-                          : hasText
-                              ? widget.onSend
-                              : null,
-                    ),
-                  ],
-                ),
-              ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
