@@ -2073,20 +2073,17 @@ class _MenuAction extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.value,
-    this.subtitle = '',
   });
 
   final IconData icon;
   final String label;
   final String value;
-  final String subtitle;
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
       leading: Icon(icon, color: _textColor(context)),
       title: Text(label, style: TextStyle(color: _textColor(context))),
-      subtitle: subtitle.isEmpty ? null : Text(subtitle),
       onTap: () => Navigator.pop(context, value),
     );
   }
